@@ -520,15 +520,17 @@ els.transparent.addEventListener('change', () => {
   drawView();
 });
 els.bg.addEventListener('change', () => drawView());
+/** Paints the viewport's CSS backdrop to match the selected mode. */
+function applyBackdrop() {
+  const transparent = els.bgMode.value === 'checker';
+  els.viewport.classList.toggle('checker', transparent);
+  els.viewport.style.background = transparent ? '' : cssColor(els.bgMode.value);
+}
+
 els.bgMode.addEventListener('change', () => {
   // The checkerboard CSS class only applies in the transparent mode; the other backdrops paint
   // their own clear colour over it.
-  const transparent = els.bgMode.value === 'checker';
-  els.viewport.classList.toggle('checker', transparent);
-  // The CSS backdrop and the WebGL clear colour must agree: with a transparent-capable canvas the
-  // browser composites the two, and a mismatch shows through wherever the framebuffer ends up
-  // partly transparent. Painting the viewport keeps every layer of the stack the same colour.
-  els.viewport.style.background = transparent ? '' : cssColor(els.bgMode.value);
+  applyBackdrop();
   drawView();
 });
 
@@ -541,6 +543,8 @@ function cssColor(mode) {
     default:      return '';
   }
 }
+
+applyBackdrop();
 
 // --- WASD fly mode ----------------------------------------------------------
 

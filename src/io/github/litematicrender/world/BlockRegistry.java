@@ -130,6 +130,15 @@ public final class BlockRegistry {
                 }
             }
         }
+        // Fluids: `level` and `falling` never appear in a blockstate json, and dropping `level`
+        // turned every stored flow gradient into a flat source surface.
+        if (FLUID_BLOCKS.contains(blockId)) {
+            for (Map.Entry<String, List<String>> e : FLUID_PROPERTIES.entrySet()) {
+                if (!propValues.containsKey(e.getKey())) {
+                    propValues.put(e.getKey(), valuesFor(e.getValue()));
+                }
+            }
+        }
         // `waterlogged` is a property of around forty vanilla block classes (leaves, stairs, fences,
         // slabs, coral, ...). It never appears in a blockstate json, because whether a block is
         // waterlogged does not change its model — the fluid is drawn separately. Without it here,
@@ -170,6 +179,26 @@ public final class BlockRegistry {
     private static final Map<String, List<String>> EXTRA_TINT_VALUES = Map.of(
         "power", List.of("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"),
         "age", List.of("0", "1", "2", "3", "4", "5", "6", "7")
+    );
+
+    /**
+     * Fluid states, whose blockstate json is empty because the game draws them with a fluid renderer.
+     *
+     * <p>This is the same class of bug as the chests': the derived property table comes from the
+     * blockstate file, fluid files declare nothing, and {@code tryWith} then silently drops
+     * {@code level} from every palette entry. A schematic that stores a proper flow gradient —
+     * {@code water[level=0]} through {@code water[level=8]}, which real files do carry — collapsed
+     * to nine identical sources and every surface rendered flat. {@code falling} marks a column
+     * that is dropping rather than spreading.
+     */
+    private static final Map<String, List<String>> FLUID_PROPERTIES = Map.of(
+        "level", List.of("0", "1", "2", "3", "4", "5", "6", "7", "8"),
+        "falling", List.of("false", "true")
+    );
+
+    /** Blocks that take the fluid property set above. */
+    private static final java.util.Set<String> FLUID_BLOCKS = java.util.Set.of(
+        "minecraft:water", "minecraft:lava", "minecraft:bubble_column"
     );
 
     /**
