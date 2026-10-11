@@ -170,10 +170,14 @@ public final class SceneBuilder {
             BlockState state = region.blocks.get(lx, ly, lz);
             if (state == null) continue;
             String id = state.blockId;
+            // A double chest is two blocks, each with type=left/right and a half-width model that
+            // omits the shared face. Reading the property here is what keeps the two halves from
+            // drawing full-width lids over the same space.
+            String chestType = state.getValue("type");
             List<BlockEntityModels.Box> boxes = switch (id) {
                 case "minecraft:chest", "minecraft:trapped_chest" ->
-                    BlockEntityModels.chest(chestSprite(id));
-                case "minecraft:ender_chest" -> BlockEntityModels.chest("minecraft:entity/chest/ender");
+                    BlockEntityModels.chest(chestType, chestSprite(id));
+                case "minecraft:ender_chest" -> BlockEntityModels.chest(chestType, "minecraft:entity/chest/ender");
                 default -> null;
             };
             if (boxes == null) {
@@ -186,8 +190,10 @@ public final class SceneBuilder {
             }
             if (boxes == null) continue;
             int x = off[0] + lx, y = off[1] + ly, z = off[2] + lz;
+            // The chest's own facing turns its geometry; its closed interior is skipped.
+            String facing = state.getValue("facing");
             for (BlockEntityModels.Box box : boxes) {
-                this.emitBox(mesh, box, x, y, z);
+                this.emitBox(mesh, box, x, y, z, facing, true);
             }
         }
     }
@@ -239,7 +245,18 @@ public final class SceneBuilder {
      * the back face continues past the front. Copying that layout is what makes a chest's planks
      * line up instead of smearing.
      */
-    private void emitBox(SceneMesh mesh, BlockEntityModels.Box box, int wx, int wy, int wz) {
+    /**
+     * Emits a block-entity box, rotated to the block's facing.
+     *
+     * <p>The rotation is a quarter-turn about the block centre, applied by remapping each face's
+     * corner coordinates and its face index together. Doing it here rather than inside
+     * {@code emitBoxFace} keeps that method axis-aligned and lets the interior faces be skipped:
+     * the game never shows the inside of a closed chest, so those faces are pure overdraw.
+     *
+     * @param facing the blockstate's {@code facing} value, or null for north
+     */
+    private void emitBox(SceneMesh mesh, BlockEntityModels.Box box, int wx, int wy, int wz,
+                         String facing, boolean skipInterior) {
         float[] f = box.from();
         float[] t = box.to();
         // Model space is 0..16; world space is 0..1 per block. Blocks sit on the lattice corner.
@@ -248,34 +265,111 @@ public final class SceneBuilder {
         float z0 = wz + f[2] / 16f, z1 = wz + t[2] / 16f;
         float w = box.width(), h = box.height(), d = box.depth();
 
-        // Texture-space rectangles, following ModelPart.Cube's unwrap.
+        // Texture-space rectangles, following ModelPart.Cube's unwrap. The unwrap is defined in the
+        // box's own frame, so it is computed before the rotation and travels with each face.
         float ox = box.originX(), oy = box.originY();
         float u0 = ox, u1 = ox + d, u2 = ox + d + w, u22 = ox + d + 2 * w;
         float u3 = ox + d + w + d, u4 = ox + d + w + d + w;
         float v0 = oy, v1 = oy + d, v2 = oy + d + h;
 
-        // Each face is described by its four corners in ring order plus its UV rectangle.
-        // Cardinal lighting uses the vanilla table, matching how the rest of the scene is shaded.
-        emitBoxFace(mesh, box, Quad.DOWN,  x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1,
-            u1, v0, u2, v1);
-        emitBoxFace(mesh, box, Quad.UP,    x0, y1, z0, x0, y1, z1, x1, y1, z1, x1, y1, z0,
-            u2, v1, u22, v0);
-        emitBoxFace(mesh, box, Quad.WEST,  x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0,
-            u0, v1, u1, v2);
-        emitBoxFace(mesh, box, Quad.NORTH, x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0,
-            u1, v1, u2, v2);
-        emitBoxFace(mesh, box, Quad.EAST,  x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1,
-            u2, v1, u3, v2);
-        emitBoxFace(mesh, box, Quad.SOUTH, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1,
-            u3, v1, u4, v2);
+        // Corners of each face, in ring order, in the box's own (unrotated) frame. The interior
+        // faces of a closed box are never visible, so they are skipped when the caller says so.
+        //            face        bottom A        bottom B        top B           top A
+        face(mesh, box, facing, skipInterior, Quad.DOWN,
+            x0, y0, z0,  x0, y0, z1,  x1, y0, z1,  x1, y0, z0,  u1, v0, u2, v1);
+        face(mesh, box, facing, skipInterior, Quad.UP,
+            x0, y1, z0,  x0, y1, z1,  x1, y1, z1,  x1, y1, z0,  u2, v1, u22, v0);
+        face(mesh, box, facing, skipInterior, Quad.WEST,
+            x0, y0, z0,  x0, y0, z1,  x0, y1, z1,  x0, y1, z0,  u0, v1, u1, v2);
+        face(mesh, box, facing, skipInterior, Quad.NORTH,
+            x1, y0, z0,  x0, y0, z0,  x0, y1, z0,  x1, y1, z0,  u1, v1, u2, v2);
+        face(mesh, box, facing, skipInterior, Quad.EAST,
+            x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1,  u2, v1, u3, v2);
+        face(mesh, box, facing, skipInterior, Quad.SOUTH,
+            x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1,  u3, v1, u4, v2);
+    }
+
+    /**
+     * Rotates one face to the block's facing and emits it.
+     *
+     * <p>A quarter-turn about the block centre maps the axes as (x, z) -> (-z, x) per step, which
+     * carries the face index with it: NORTH -> WEST -> SOUTH -> EAST, while DOWN and UP are fixed.
+     * Applying the turn to the corners here keeps {@code emitBoxFace} axis-aligned.
+     *
+     * <p>When {@code skipInterior} is set, faces whose visible side faces into the closed box are
+     * dropped. Which ones those are depends on the facing — the back face and, for a chest, the
+     * lid's underside — so the caller's flag is resolved against the rotated direction.
+     */
+    private void face(SceneMesh mesh, BlockEntityModels.Box box, String facing, boolean skipInterior,
+                      int unrotatedFace,
+                      float ax, float ay, float az, float bx, float by, float bz,
+                      float cx, float cy, float cz, float dx2, float dy2, float dz2,
+                      float tu0, float tv0, float tu1, float tv1) {
+        int turns = switch (facing == null ? "north" : facing) {
+            case "east" -> 1;
+            case "south" -> 2;
+            case "west" -> 3;
+            default -> 0;                       // north
+        };
+        // Rotate each corner about the block centre, one quarter-turn at a time.
+        //
+        // The centre is the corner block's own middle, NOT (0.5, 0.5): the incoming coordinates are
+        // already world space, offset by the block's integer position. Centring on 0.5 rotated every
+        // chest about the world origin, which flung the geometry far outside the build and inflated
+        // the bounding box that the camera fit uses.
+        float[] xs = {ax, bx, cx, dx2};
+        float[] ys = {ay, by, cy, dy2};
+        float[] zs = {az, bz, cz, dz2};
+        float cxm = (float) Math.floor(xs[0]) + 0.5f;
+        float czm = (float) Math.floor(zs[0]) + 0.5f;
+        for (int i = 0; i < 4; i++) {
+            float px = xs[i] - cxm, pz = zs[i] - czm;
+            for (int s = 0; s < turns; s++) {
+                float tmp = px;
+                px = -pz;
+                pz = tmp;
+            }
+            xs[i] = px + cxm;
+            zs[i] = pz + czm;
+        }
+        // Carry the face index with the same turn: NORTH -> WEST -> SOUTH -> EAST.
+        int f = unrotatedFace;
+        for (int s = 0; s < turns; s++) {
+            f = switch (f) {
+                case Quad.NORTH -> Quad.WEST;
+                case Quad.WEST -> Quad.SOUTH;
+                case Quad.SOUTH -> Quad.EAST;
+                case Quad.EAST -> Quad.NORTH;
+                default -> f;                   // DOWN / UP do not move
+            };
+        }
+        // The inside of a closed box: the face pointing away from the viewer is the back of the
+        // box, and its outward normal points into the cavity. Only skip when asked.
+        if (skipInterior && isInteriorFace(box, f)) return;
+
+        emitBoxFace(mesh, box, f, xs[0], ys[0], zs[0], xs[1], ys[1], zs[1],
+            xs[2], ys[2], zs[2], xs[3], ys[3], zs[3], tu0, tv0, tu1, tv1);
+    }
+
+    /**
+     * True when this face of the box faces into the box's own cavity, so it can be skipped.
+     *
+     * <p>For the chest this is the bottom of the lid and the top of the body — the two surfaces that
+     * touch when the lid is closed. Skipping them is safe because the cavity is sealed by the lid,
+     * and it removes a quarter of the chest's quads.
+     */
+    private boolean isInteriorFace(BlockEntityModels.Box box, int face) {
+        // Identify the lid by its height: it is the part above y=9 in the vanilla chest model.
+        boolean isLid = box.from()[1] >= 9f;
+        if (isLid) return face == Quad.DOWN;     // underside of the lid
+        return face == Quad.UP;                  // top of the body, under the lid
     }
 
     /** Emits one axis-aligned face of a block-entity box. */
     private void emitBoxFace(SceneMesh mesh, BlockEntityModels.Box box, int face,
                              float ax, float ay, float az, float bx, float by, float bz,
                              float cx, float cy, float cz, float dx, float dy, float dz,
-                             float tu0, float tv0, float tu1, float tv1) {
-        // Texture pixels to atlas UV. The box carries its own texture size, because entity atlases
+                             float tu0, float tv0, float tu1, float tv1) {        // Texture pixels to atlas UV. The box carries its own texture size, because entity atlases
         // are 64 wide rather than a block sprite's 16.
         float su0 = tu0 / box.texW(), su1 = tu1 / box.texW();
         float sv0 = tv0 / box.texH(), sv1 = tv1 / box.texH();
@@ -289,7 +383,6 @@ public final class SceneBuilder {
         float[] pv = {sv1, sv0, sv0, sv1};
 
         float shade = CARDINAL[face];
-        String layer = "minecraft:entity/chest/normal";
         SceneMesh.MeshQuad q = new SceneMesh.MeshQuad(xs, ys, zs,
             pu[0], pv[0], pu[1], pv[1], pu[2], pv[2], pu[3], pv[3],
             box.sprite(), 0xFFFFFFFF, null, 1f, 1f, 1f, shade, null,

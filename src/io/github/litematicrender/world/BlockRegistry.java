@@ -114,6 +114,15 @@ public final class BlockRegistry {
                 }
             }
         }
+        // Blocks whose blockstate model is empty still carry real properties in the palette. Give
+        // them a table so tryWith() accepts those properties instead of dropping them.
+        if (MODELLESS_BLOCKS.contains(blockId)) {
+            for (Map.Entry<String, List<String>> e : MODELLESS_PROPERTIES.entrySet()) {
+                if (!propValues.containsKey(e.getKey())) {
+                    propValues.put(e.getKey(), valuesFor(e.getValue()));
+                }
+            }
+        }
 
         for (Map.Entry<String, LinkedHashSetSet> e : propValues.entrySet()) {
             // stable order: boolean-ish false,true; numeric ascending; enum as encountered (sorted alphabetically for stability)
@@ -146,6 +155,28 @@ public final class BlockRegistry {
     private static final Map<String, List<String>> EXTRA_TINT_VALUES = Map.of(
         "power", List.of("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"),
         "age", List.of("0", "1", "2", "3", "4", "5", "6", "7")
+    );
+
+    /**
+     * Properties carried by blocks whose blockstate model is empty, and which therefore never show
+     * up in a variant key.
+     *
+     * <p>Chests are the case that matters: their blockstate json declares a single unnamed variant,
+     * so the derived property table is empty and every property from the schematic's palette is
+     * silently dropped by {@code tryWith}. The consequence was that all chests rendered facing north
+     * and as singles — a double chest became two overlapping full-width boxes. The game itself keeps
+     * these properties on the block, which is how {@code ChestBlock.TYPE} drives the half-width
+     * models.
+     */
+    private static final Map<String, List<String>> MODELLESS_PROPERTIES = Map.of(
+        "facing", List.of("north", "south", "west", "east"),
+        "type", List.of("single", "left", "right"),
+        "waterlogged", List.of("false", "true")
+    );
+
+    /** Blocks that take the model-less property set above. */
+    private static final java.util.Set<String> MODELLESS_BLOCKS = java.util.Set.of(
+        "minecraft:chest", "minecraft:trapped_chest", "minecraft:ender_chest"
     );
 
     @SuppressWarnings("unchecked")
