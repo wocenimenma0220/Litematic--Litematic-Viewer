@@ -25,7 +25,7 @@ public final class DiagGenSlope {
             b.put(DiagGenStairs.Simple.key(1, 0, z), "minecraft:water[level=" + levels[z] + ",falling=false]");
         }
         // A source feeding the top of the run, then a drop into a second trench.
-        b.put(DiagGenStairs.Simple.key(1, 0, 8), "minecraft:water[level=0,falling=false]");
+        b.put(DiagGenStairs.Simple.key(1, 0, 8), "minecraft:water[level=0,falling=false]");   // keep the source: it is what a real run has
         for (int z = 9; z <= 11; z++) b.put(DiagGenStairs.Simple.key(1, 0, z), "minecraft:smooth_stone");
         var out = Path.of(args[0]);
         java.nio.file.Files.createDirectories(out);

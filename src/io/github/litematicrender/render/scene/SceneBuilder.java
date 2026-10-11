@@ -747,10 +747,16 @@ public final class SceneBuilder {
             // waterlogged leaf or a stair beside a drop-off still contributes its own 8/9 height to
             // the average even though no water can flow through it, and the corner pops up in the
             // middle of a slope — the "sudden bump" the surface showed.
-            boolean northExposed = renderNorth && this.isFluidSideExposed(x, y, z - 1, self, 1f);
-            boolean southExposed = renderSouth && this.isFluidSideExposed(x, y, z + 1, self, 1f);
-            boolean westExposed = renderWest && this.isFluidSideExposed(x - 1, y, z, self, 1f);
-            boolean eastExposed = renderEast && this.isFluidSideExposed(x + 1, y, z, self, 1f);
+            // Sodium keeps face *visibility* and side *exposure* separate, and the distinction is
+            // easy to collapse by mistake: visibility is false for a same-fluid neighbour (there is
+            // no face to draw between two water cells), while exposure is true (the surface is
+            // continuous across them). Gating the corner samples on visibility therefore dropped
+            // every water neighbour from the average, leaving (self + 0 + 0)/3 — each cell flat at a
+            // third of its height, stepping cell by cell instead of sloping.
+            boolean northExposed = this.isFluidSideExposed(x, y, z - 1, self, 1f);
+            boolean southExposed = this.isFluidSideExposed(x, y, z + 1, self, 1f);
+            boolean westExposed = this.isFluidSideExposed(x - 1, y, z, self, 1f);
+            boolean eastExposed = this.isFluidSideExposed(x + 1, y, z, self, 1f);
 
             float heightNorth = this.fluidHeight(x, y, z - 1, self);
             float heightSouth = this.fluidHeight(x, y, z + 1, self);
@@ -969,16 +975,25 @@ public final class SceneBuilder {
      * is the {@code level} property itself (1..8). So a source is 8/9 tall and a level-8 flowing
      * block is also 8/9; treating level 0 as a full block renders every source one pixel too high.
      */
+    /**
+     * Vanilla {@code FlowingFluid.getOwnHeight()} = {@code getAmount() / 9.0F}, where
+     * {@code WaterFluid.Source.getAmount()} is <b>8</b> and flowing water's amount is
+     * {@code 8 - level} — the blockstate's {@code level} counts how far the water has spread, not
+     * how much of it there is.
+     *
+     * <p>The direction is easy to invert and inverting it is silent: the surface still steps, just
+     * backwards, so the shallowest block sits where the deepest belongs and the run reads as a
+     * staircase rising against the flow. {@code LiquidBlock}'s state cache is the authority — it
+     * builds index 1..7 with {@code getFlowing(8 - level)}.
+     *
+     * <p>Level 0 is a source and level 8 marks a falling column; both carry amount 8.
+     */
     private float ownHeight(BlockState s, int x, int y, int z) {
-        // quickcraft parity: it feeds the palette's state straight into the game's FluidState, where
-        // a water block with no level property IS a source (level 0 → amount 8). Simulating flow
-        // here would invent levels the file never carried and diverge from both quickcraft and the
-        // in-game display of the same schematic.
         String level = s.getValue("level");
-        if (level == null) return 8f / 9f;
+        if (level == null) return 8f / 9f;              // a waterlogged block: still, full
         try {
             int l = Integer.parseInt(level);
-            int amount = (l == 0) ? 8 : Math.min(8, l);
+            int amount = (l == 0 || l >= 8) ? 8 : (8 - l);
             return amount / 9f;
         } catch (NumberFormatException e) {
             return 8f / 9f;
