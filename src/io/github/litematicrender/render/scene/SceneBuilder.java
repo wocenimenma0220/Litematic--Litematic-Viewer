@@ -742,14 +742,29 @@ public final class SceneBuilder {
         if (heightSelf >= 1f) {
             heightNorthEast = heightNorthWest = heightSouthEast = heightSouthWest = 1f;
         } else {
+            // Sodium's improvedFluidShaping (DefaultFluidRenderer): the corner heights are sampled
+            // only through faces the fluid can actually reach. Without the exposure test, a
+            // waterlogged leaf or a stair beside a drop-off still contributes its own 8/9 height to
+            // the average even though no water can flow through it, and the corner pops up in the
+            // middle of a slope — the "sudden bump" the surface showed.
+            boolean northExposed = renderNorth && this.isFluidSideExposed(x, y, z - 1, self, 1f);
+            boolean southExposed = renderSouth && this.isFluidSideExposed(x, y, z + 1, self, 1f);
+            boolean westExposed = renderWest && this.isFluidSideExposed(x - 1, y, z, self, 1f);
+            boolean eastExposed = renderEast && this.isFluidSideExposed(x + 1, y, z, self, 1f);
+
             float heightNorth = this.fluidHeight(x, y, z - 1, self);
             float heightSouth = this.fluidHeight(x, y, z + 1, self);
             float heightEast = this.fluidHeight(x + 1, y, z, self);
             float heightWest = this.fluidHeight(x - 1, y, z, self);
-            heightNorthEast = avgHeight(self, heightSelf, heightNorth, heightEast, x + 1, y, z - 1);
-            heightNorthWest = avgHeight(self, heightSelf, heightNorth, heightWest, x - 1, y, z - 1);
-            heightSouthEast = avgHeight(self, heightSelf, heightSouth, heightEast, x + 1, y, z + 1);
-            heightSouthWest = avgHeight(self, heightSelf, heightSouth, heightWest, x - 1, y, z + 1);
+
+            heightNorthEast = avgHeight(self, heightSelf, heightNorth, heightEast,
+                x + 1, y, z - 1, northExposed, eastExposed);
+            heightNorthWest = avgHeight(self, heightSelf, heightNorth, heightWest,
+                x - 1, y, z - 1, northExposed, westExposed);
+            heightSouthEast = avgHeight(self, heightSelf, heightSouth, heightEast,
+                x + 1, y, z + 1, southExposed, eastExposed);
+            heightSouthWest = avgHeight(self, heightSelf, heightSouth, heightWest,
+                x - 1, y, z + 1, southExposed, westExposed);
         }
 
         float fx = x, fy = y, fz = z;
@@ -970,20 +985,59 @@ public final class SceneBuilder {
         }
     }
 
-    /** Vanilla {@code FluidRenderer.calculateAverageHeight}: heights ≥ 0.8 count ten times. */
+    /**
+     * Vanilla {@code FluidRenderer.calculateAverageHeight}, extended with Sodium's exposure filter.
+     *
+     * <p>The base rule is the game's: heights at or above 0.8 count ten times, lower ones once, and
+     * a neighbour that returns {@code -1} contributes nothing at all. The exposure flags are
+     * Sodium's {@code sampleFluidCornerSmart}: a side that no water can flow through — a
+     * waterlogged block, a wall — is dropped from the average instead of pulling the corner toward
+     * its own height. That is what keeps a slope smooth as it passes a leaf or a stair.
+     */
     private float avgHeight(String self, float hSelf, float h1, float h2,
-                            int cornerX, int cornerY, int cornerZ) {        if (h1 >= 1f || h2 >= 1f) return 1f;
+                            int cornerX, int cornerY, int cornerZ,
+                            boolean exposed1, boolean exposed2) {
+        if (h1 >= 1f || h2 >= 1f) return 1f;
         float sum = 0, weight = 0;
-        if (h1 > 0f || h2 > 0f) {
+        // Reachability through the diagonal: only sample the corner when a path exists around it.
+        boolean cornerReachable = exposed1 && exposed2;
+        if ((exposed1 || exposed2) && (h1 > 0f || h2 > 0f)) {
             float hCorner = this.fluidHeight(cornerX, cornerY, cornerZ, self);
             if (hCorner >= 1f) return 1f;
-            if (hCorner >= 0.8f) { sum += hCorner * 10f; weight += 10f; }
-            else if (hCorner >= 0f) { sum += hCorner; weight += 1f; }
+            if (cornerReachable || hCorner < 0.8f) {
+                if (hCorner >= 0.8f) { sum += hCorner * 10f; weight += 10f; }
+                else if (hCorner >= 0f) { sum += hCorner; weight += 1f; }
+            }
+        }
+        if (exposed1 && h1 >= 0f) {
+            if (h1 >= 0.8f) { sum += h1 * 10f; weight += 10f; } else { sum += h1; weight += 1f; }
+        }
+        if (exposed2 && h2 >= 0f) {
+            if (h2 >= 0.8f) { sum += h2 * 10f; weight += 10f; } else { sum += h2; weight += 1f; }
         }
         if (hSelf >= 0.8f) { sum += hSelf * 10f; weight += 10f; } else if (hSelf >= 0f) { sum += hSelf; weight += 1f; }
-        if (h1 >= 0.8f) { sum += h1 * 10f; weight += 10f; } else if (h1 >= 0f) { sum += h1; weight += 1f; }
-        if (h2 >= 0.8f) { sum += h2 * 10f; weight += 10f; } else if (h2 >= 0f) { sum += h2; weight += 1f; }
         return weight == 0f ? 0f : sum / weight;
+    }
+
+    /**
+     * Sodium {@code DefaultFluidRenderer.isFluidSideExposed}: is there an open path through this
+     * face of the fluid block?
+     *
+     * <p>A neighbour that cannot occlude (glass, air, a plant) leaves the face exposed. A full
+     * occlusion shape blocks it entirely. For a partial shape the fluid's own box — a slab up to
+     * {@code height} — is compared against the neighbour's shape, which is the case that decides
+     * whether water flows past a stair or a slab.
+     */
+    private boolean isFluidSideExposed(int nx, int ny, int nz, String self, float height) {
+        if (height <= 0f) return false;
+        BlockState neighbor = this.blockAt(nx, ny, nz);
+        if (neighbor == null || neighbor.isAir()) return true;
+        // Same fluid: no isolation, the surface is continuous across the two cells.
+        String k = fluidKeyOrNull(neighbor);
+        if (k != null && k.equals(self)) return true;
+        if (!this.shapes.occludes(neighbor)) return true;
+        // A full cube blocks every side of the fluid; nothing more to compare.
+        return !this.shapes.isShapeFullBlock(neighbor);
     }
 
     /**
