@@ -1,0 +1,17 @@
+{
+  "name": "litematic-render-shell",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Litematic Render — desktop shell (Electron) over the Java render engine",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^44.7.0"
+  }
+}

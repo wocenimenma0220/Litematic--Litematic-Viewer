@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src 'self' data: file:; style-src 'self'; script-src 'self'; connect-src 'self' file:;" />
+  <title>Litematic Render</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="titlebar">
+    <span class="appname">Litematic Render</span>
+    <nav class="menu">
+      <button class="menubtn" id="menuFile">File</button>
+      <div class="dropdown hidden" id="menuFileDrop">
+        <button id="menuOpenSchematic">打开投影 (.litematic)…</button>
+        <button id="menuImportPack">导入材质包…</button>
+        <div class="menusep"></div>
+        <button id="menuExportPng" disabled>导出 PNG…</button>
+        <button id="menuExportGif" disabled>导出动画 GIF…</button>
+        <div class="menusep"></div>
+        <button id="menuQuit">退出</button>
+      </div>
+    </nav>
+  </div>
+
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="dot"></span>
+        <div>
+          <h1>Litematic Render</h1>
+          <p id="engineStatus" class="muted">正在启动渲染引擎…</p>
+        </div>
+      </div>
+
+      <section class="group">
+        <h2>投影文件</h2>
+        <button id="btnOpen" class="primary">打开 .litematic…</button>
+        <div id="fileInfo" class="fileinfo hidden"></div>
+      </section>
+
+      <section class="group">
+        <h2>材质包</h2>
+        <p class="muted small">内置包随程序附带；导入包可上移/下移/移除，越靠下优先级越高。</p>
+        <ul id="packList" class="packlist"></ul>
+      </section>
+
+      <section class="group">
+        <h2>视角</h2>
+        <div class="field">
+          <label for="rotation">水平旋转 <span id="rotationVal" class="val">45°</span></label>
+          <input type="range" id="rotation" min="0" max="360" step="1" value="45" />
+        </div>
+        <div class="field">
+          <label for="slant">俯仰角 <span id="slantVal" class="val">30°</span></label>
+          <input type="range" id="slant" min="-90" max="90" step="1" value="30" />
+        </div>
+        <div class="field">
+          <label for="zoom">缩放 <span id="zoomVal" class="val">1.00×</span></label>
+          <input type="range" id="zoom" min="0.05" max="20" step="0.05" value="1" />
+        </div>
+        <div class="presets">
+          <button data-preset="iso">等轴 45/35.264</button>
+          <button data-preset="dimetric">斜二测 45/30</button>
+          <button data-preset="front">正视 0/0</button>
+          <button data-preset="top">俯视 0/89</button>
+          <button data-preset="back">背视 180/0</button>
+          <button data-preset="left">左视 -90/0</button>
+        </div>
+        <p class="muted small">在预览区拖动即可旋转，滚轮缩放；按 V 进入漫游。</p>
+        <button id="btnFly">进入漫游 (V)</button>
+        <p id="flyHint" class="muted small hidden">
+          漫游中：<b>W/A/S/D</b> 移动，<b>空格</b> 上升，<b>C</b> 下降，<b>Shift</b> 加速，拖动鼠标转视角，<b>V</b> 退出。
+        </p>
+      </section>
+
+      <section class="group">
+        <h2>输出</h2>
+        <div class="field">
+          <label for="size">分辨率</label>
+          <select id="size">
+            <option value="512">512 × 512</option>
+            <option value="1024" selected>1024 × 1024</option>
+            <option value="2048">2048 × 2048</option>
+            <option value="4096">4096 × 4096</option>
+          </select>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="transparent" checked />
+          <span>透明背景</span>
+        </label>
+        <div class="field">
+          <label for="bg">背景色</label>
+          <input type="color" id="bg" value="#ffffff" />
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="btnRender" class="primary" disabled>重新渲染</button>
+        <button id="btnExport" disabled>导出 PNG…</button>
+      </div>
+
+      <p id="hint" class="muted small">先打开一个 .litematic 文件。</p>
+    </aside>
+
+    <main class="stage">
+      <div class="toolbar">
+        <span id="stats" class="muted small">—</span>
+        <span class="spacer"></span>
+        <label class="check small">
+          <input type="checkbox" id="checker" checked />
+          <span>透明棋盘格</span>
+        </label>
+      </div>
+      <div id="viewport" class="viewport checker">
+        <canvas id="gl" class="glcanvas"></canvas>
+        <img id="preview" alt="渲染预览" class="hidden" />
+        <div id="placeholder" class="placeholder">还没有渲染结果</div>
+        <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">渲染中…</span></div>
+      </div>
+      <div id="log" class="log"></div>
+    </main>
+  </div>
+  <script src="gpu-view.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

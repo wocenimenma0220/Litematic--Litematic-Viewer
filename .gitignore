@@ -1,0 +1,29 @@
+# Build outputs
+bin/
+dist/
+renders/
+runtime/
+
+# Bundled toolchain (a full Node distribution, ~90 MB) — fetched, not authored here.
+tools/
+
+# Electron payload and its node_modules
+webapp/node_modules/
+
+# Bundled Minecraft assets and third-party resource packs: large and not ours to version.
+# The atlas overlay we author (assets/builtin/block-entity-textures) is kept, see the negation.
+assets/vanilla/
+assets/builtin/*.zip
+
+# Scratch
+*.log
+*.tmp
+.vscode/
+.idea/
+archive/
+packs/
+logs/
+
+# User schematics for local testing
+schematics/*.litematic
+!schematics/test/*.litematic

@@ -1,0 +1,44 @@
+{
+  "sources": [
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/chest/",
+      "source": "entity/chest"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/shulker/",
+      "source": "entity/shulker"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/skeleton/",
+      "source": "entity/skeleton"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/zombie/",
+      "source": "entity/zombie"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/creeper/",
+      "source": "entity/creeper"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/enderman/",
+      "source": "entity/enderman"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/piglin/",
+      "source": "entity/piglin"
+    },
+    {
+      "type": "minecraft:directory",
+      "prefix": "entity/wither/",
+      "source": "entity/wither"
+    }
+  ]
+}
