@@ -123,6 +123,14 @@ public final class BlockRegistry {
                 }
             }
         }
+        // `waterlogged` is a property of around forty vanilla block classes (leaves, stairs, fences,
+        // slabs, coral, ...). It never appears in a blockstate json, because whether a block is
+        // waterlogged does not change its model — the fluid is drawn separately. Without it here,
+        // tryWith() dropped the property from every palette entry, and water inside waterlogged
+        // blocks never rendered.
+        if (!propValues.containsKey("waterlogged")) {
+            propValues.put("waterlogged", valuesFor(List.of("false", "true")));
+        }
 
         for (Map.Entry<String, LinkedHashSetSet> e : propValues.entrySet()) {
             // stable order: boolean-ish false,true; numeric ascending; enum as encountered (sorted alphabetically for stability)

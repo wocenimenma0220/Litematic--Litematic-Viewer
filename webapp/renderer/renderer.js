@@ -39,6 +39,7 @@ const els = {
   log: $('log'),
   stats: $('stats'),
   checker: $('checker'),
+  bgMode: $('bgMode'),
   packList: $('packList'),
   menuFile: $('menuFile'),
   menuFileDrop: $('menuFileDrop'),
@@ -271,15 +272,30 @@ function reportFraming() {
     + ` | fit=${(v.fitScale || 0).toFixed(2)}`
     + ` | centre=(${pc[0].toFixed(2)},${pc[1].toFixed(2)})`;
 }
+/**
+ * The viewer backdrop, from the 背景 selector.
+ *
+ * <p>A bright backdrop exists because translucent blocks — glass and water above all — composite
+ * against whatever is behind them. Their textures are authored to be seen against the in-game sky,
+ * which is bright; over the dark checkerboard a 46%-alpha white reads as grey, which is correct
+ * compositing but useless for judging whether the texture is right. The checkerboard stays an
+ * option because it is still the honest way to see which pixels are transparent.
+ *
+ * @returns an [r,g,b,a] clear colour, or null for transparent (the CSS checkerboard shows through)
+ */
+function backdropColor() {
+  switch (els.bgMode.value) {
+    case 'sky':  return [0.55, 0.70, 1.00, 1];   // the in-game sky at noon
+    case 'white': return [1, 1, 1, 1];
+    case 'dark':  return [0.16, 0.18, 0.21, 1];
+    default:      return null;                    // transparent
+  }
+}
+
 /** Draws one frame from the current camera. No geometry work, so it is safe per pointermove. */
 function drawView() {
   if (!state.view || !state.viewReady) return;
-  const transparent = els.transparent.checked;
-  let background = [0, 0, 0, 0];
-  if (!transparent) {
-    const v = hexToInt(els.bg.value);
-    background = [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255, 1];
-  }
+  const background = backdropColor();
   const view = state.view;
   const cam = state.fly ? flyCamera() : orbitCamera();
   cam.background = background;
@@ -505,6 +521,14 @@ els.transparent.addEventListener('change', () => {
   drawView();
 });
 els.bg.addEventListener('change', () => drawView());
+els.bgMode.addEventListener('change', () => {
+  // The checkerboard CSS class only applies in the transparent mode; the other backdrops paint
+  // their own clear colour over it.
+  const transparent = els.bgMode.value === 'checker';
+  els.viewport.classList.toggle('checker', transparent);
+  els.checker.checked = transparent;
+  drawView();
+});
 els.checker.addEventListener('change', () => {
   els.viewport.classList.toggle('checker', els.checker.checked);
 });

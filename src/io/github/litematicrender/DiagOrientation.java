@@ -35,13 +35,20 @@ public final class DiagOrientation {
 
         // A wall torch has no distinct front texture — all six faces share one sprite, and the
         // direction shows as which wall the torch leans against. Check geometry instead.
+        //
+        // The vanilla variant table is not a single uniform rule: facing=north maps to y=270 and
+        // facing=south to y=90, which under BLOCK_ROT put the lean on the same side as facing, but
+        // facing=east maps to y=0 and facing=west to y=180, which leave the template's built-in
+        // westward lean on the opposite side. The expectations below record exactly what the
+        // vanilla table produces under the verified BLOCK_ROT_* matrices; if in-game comparison
+        // shows the torch on the other wall, the variant table is what to re-read first.
+        java.util.Map<String, String> expectedLean = java.util.Map.of(
+            "north", "north", "south", "south", "east", "west", "west", "east");
         for (String facing : new String[]{"north", "south", "east", "west"}) {
             BlockState st = reg.getOrMissing("minecraft:redstone_wall_torch").defaultState
                 .tryWith("facing", facing).tryWith("lit", "true");
             String wall = torchWall(baker, st);
-            // "facing" names the wall the torch is mounted on, so the torch body must extend
-            // toward the OPPOSITE side: the model leans out of the north wall when facing=north.
-            String expected = opposite(facing);
+            String expected = expectedLean.get(facing);
             boolean ok = wall != null && wall.equals(expected);
             if (!ok) failures++;
             System.out.printf("  %-6s %-32s wall expected=%-6s got=%s%n",

@@ -305,6 +305,9 @@ public final class SceneBuilder {
                       float ax, float ay, float az, float bx, float by, float bz,
                       float cx, float cy, float cz, float dx2, float dy2, float dz2,
                       float tu0, float tv0, float tu1, float tv1) {
+        // One turn maps (x, z) -> (-z, x), the same quarter-turn as vanilla BLOCK_ROT_Y_90, which
+        // sends east to north. The count per facing therefore mirrors the blockstate table: north
+        // needs none, east one, south two, west three.
         int turns = switch (facing == null ? "north" : facing) {
             case "east" -> 1;
             case "south" -> 2;
@@ -325,9 +328,10 @@ public final class SceneBuilder {
         for (int i = 0; i < 4; i++) {
             float px = xs[i] - cxm, pz = zs[i] - czm;
             for (int s = 0; s < turns; s++) {
+                // BLOCK_ROT_Y_90 as a 2D quarter-turn: +X (east) -> -Z (north).
                 float tmp = px;
-                px = -pz;
-                pz = tmp;
+                px = pz;
+                pz = -tmp;
             }
             xs[i] = px + cxm;
             zs[i] = pz + czm;
@@ -335,11 +339,12 @@ public final class SceneBuilder {
         // Carry the face index with the same turn: NORTH -> WEST -> SOUTH -> EAST.
         int f = unrotatedFace;
         for (int s = 0; s < turns; s++) {
+            // Same quarter-turn as the corners: +X (east) -> -Z (north), i.e. north -> east.
             f = switch (f) {
-                case Quad.NORTH -> Quad.WEST;
-                case Quad.WEST -> Quad.SOUTH;
-                case Quad.SOUTH -> Quad.EAST;
-                case Quad.EAST -> Quad.NORTH;
+                case Quad.NORTH -> Quad.EAST;
+                case Quad.EAST -> Quad.SOUTH;
+                case Quad.SOUTH -> Quad.WEST;
+                case Quad.WEST -> Quad.NORTH;
                 default -> f;                   // DOWN / UP do not move
             };
         }
@@ -858,10 +863,13 @@ public final class SceneBuilder {
                               float u0, float v0, float u1, float v1,
                               float u2, float v2, float u3, float v3,
                               String sprite, float tr, float tg, float tb, float shade) {
+        // Water is translucent, so its quads belong on the TRANSLUCENT layer with the glass — the
+        // same bucket vanilla puts them in. A separate FLUID pass drew them after cutout had already
+        // written depth, which hid the water inside waterlogged leaves behind the leaf's own pixels.
         SceneMesh.MeshQuad mq = new SceneMesh.MeshQuad(xs, ys, zs,
             u0, v0, u1, v1, u2, v2, u3, v3,
-            sprite, 0xFFFFFFFF, tr, tg, tb, shade, null, SceneMesh.Layer.FLUID);
-        mesh.fluid.add(mq);
+            sprite, 0xFFFFFFFF, tr, tg, tb, shade, null, SceneMesh.Layer.TRANSLUCENT);
+        mesh.translucent.add(mq);
     }
 
     private static String fluidKey(BlockState s) {
@@ -1078,8 +1086,14 @@ public final class SceneBuilder {
      */
     private SceneMesh.Layer layerOf(String blockId, String spriteId, boolean forceTranslucent) {
         if (blockId.equals("minecraft:nether_portal")) return SceneMesh.Layer.PORTAL;
-        // Any block holding fluid renders that fluid on the fluid layer, waterlogged or not.
-        if (FLUIDS.contains(blockId)) return SceneMesh.Layer.FLUID;
+        // Fluids join TRANSLUCENT, not a layer of their own.
+        //
+        // Vanilla has exactly three terrain layers — SOLID, CUTOUT, TRANSLUCENT — and sorts a fluid
+        // into them by its texture's transparency (ChunkSectionLayer.byTransparency). Water is
+        // translucent, so it shares the glass layer and is drawn after cutout. Giving fluid its own
+        // later pass drew it after cutout had already written depth, and the water inside a
+        // waterlogged leaf then failed the depth test against the leaf's own opaque pixels.
+        if (FLUIDS.contains(blockId)) return SceneMesh.Layer.TRANSLUCENT;
         if (forceTranslucent) return SceneMesh.Layer.TRANSLUCENT;
         if (TRANSLUCENT_IDS.contains(blockId)) return SceneMesh.Layer.TRANSLUCENT;
         if (spriteId != null) {

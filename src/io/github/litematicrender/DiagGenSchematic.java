@@ -37,10 +37,36 @@ public final class DiagGenSchematic {
         write(outDir.resolve("shading.litematic"), shading());
         write(outDir.resolve("redstone.litematic"), redstone());
         write(outDir.resolve("connections.litematic"), connections());
+        write(outDir.resolve("waterlogged.litematic"), waterlogged());
         System.out.println("wrote fixtures to " + outDir.toAbsolutePath());
     }
 
     // ------------------------------------------------------------------ fixtures
+
+    /**
+     * Waterlogged blocks and fluids at every level.
+     *
+     * <p>This fixture exists because a waterlogged block holds its fluid in a property rather than
+     * being a fluid block itself, which is a separate code path from the plain water here. Leaves,
+     * stairs and a fence each take the waterlogged variant so the water that should appear inside
+     * them can be checked against the real game.
+     */
+    private static Map<String, String> waterlogged() {
+        Map<String, String> b = new LinkedHashMap<>();
+        for (int x = -1; x <= 10; x++) for (int z = -1; z <= 6; z++) b.put(key(x, -1, z), "minecraft:smooth_stone");
+        // A source row so neighbours have something to connect to.
+        for (int x = 0; x <= 3; x++) b.put(key(x, 0, 0), "minecraft:water[level=0]");
+        // Waterlogged variants: leaves, oak stairs, an oak fence and oak slabs.
+        b.put(key(0, 0, 2), "minecraft:oak_leaves[waterlogged=true,distance=1,persistent=true]");
+        b.put(key(1, 0, 2), "minecraft:oak_stairs[facing=north,half=bottom,shape=straight,waterlogged=true]");
+        b.put(key(2, 0, 2), "minecraft:oak_fence[north=true,south=true,waterlogged=true]");
+        b.put(key(3, 0, 2), "minecraft:oak_slab[type=bottom,waterlogged=true]");
+        // A flow column for the flowing-sprite path.
+        b.put(key(6, 0, 0), "minecraft:water[level=8,falling=true]");
+        for (int y = 0; y <= 3; y++) b.put(key(6, y, 0), "minecraft:water[level=8,falling=true]");
+        b.put(key(6, 4, 0), "minecraft:water[level=0]");
+        return b;
+    }
 
     /**
      * Three 1x1x8 bars along +X (red wool), +Y (lime wool) and +Z (blue wool) from a common corner,

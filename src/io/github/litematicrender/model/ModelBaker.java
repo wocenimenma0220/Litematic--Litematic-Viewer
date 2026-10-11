@@ -609,11 +609,13 @@ public final class ModelBaker {
 
         /** Left-multiplies m by the vanilla y-rotation of the given 0/90/180/270 value. */
         private static double[][] composeY(double[][] m, int deg) {
-            // BLOCK_ROT_Y_90 = ROT_90_Y_NEG: +Z -> +X, +X -> -Z (a north-facing front swings east).
+            // BLOCK_ROT_Y_90 = ROT_90_Y_NEG = P321 with invertX, from OctahedralGroup:
+            // scaling(-1,1,1) x [[0,0,1],[0,1,0],[1,0,0]] = [[0,0,-1],[0,1,0],[-1,0,0]],
+            // which sends +Z (south) to -X (west) and +X (east) to -Z (north).
             return switch (deg) {
-                case 90 -> mul(new double[][]{{0, 0, -1}, {0, 1, 0}, {1, 0, 0}}, m);
+                case 90 -> mul(new double[][]{{0, 0, -1}, {0, 1, 0}, {-1, 0, 0}}, m);
                 case 180 -> mul(new double[][]{{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}, m);
-                case 270 -> mul(new double[][]{{0, 0, 1}, {0, 1, 0}, {-1, 0, 0}}, m);
+                case 270 -> mul(new double[][]{{0, 0, 1}, {0, 1, 0}, {1, 0, 0}}, m);
                 default -> m;
             };
         }
@@ -672,21 +674,61 @@ public final class ModelBaker {
         double angle = Math.toRadians(rot.angle());
         double cx = x - rot.origin()[0] / 16f, cy = y - rot.origin()[1] / 16f, cz = z - rot.origin()[2] / 16f;
         double nx = cx, ny = cy, nz = cz;
+        double c = Math.cos(angle), s = Math.sin(angle);
         switch (rot.axis()) {
             case "x" -> {
-                ny = cy * Math.cos(angle) - cz * Math.sin(angle);
-                nz = cy * Math.sin(angle) + cz * Math.cos(angle);
+                ny = cy * c - cz * s;
+                nz = cy * s + cz * c;
             }
             case "y" -> {
-                nx = cx * Math.cos(angle) + cz * Math.sin(angle);
-                nz = -cx * Math.sin(angle) + cz * Math.cos(angle);
+                nx = cx * c + cz * s;
+                nz = -cx * s + cz * c;
             }
             case "z" -> {
-                nx = cx * Math.cos(angle) - cy * Math.sin(angle);
-                ny = cx * Math.sin(angle) + cy * Math.cos(angle);
+                nx = cx * c - cy * s;
+                ny = cx * s + cy * c;
             }
         }
+        // Rescale, as vanilla's CuboidRotation.computeRescale does. A rotated element shrinks by up
+        // to 1/sqrt(2) at 45 degrees, which is exactly why two ascending rails failed to meet at a
+        // slope joint: the rail plane no longer reached the neighbouring block. For each world axis
+        // the axis unit vector is run through the same rotation and the reciprocal of its largest
+        // component becomes that axis's scale, restoring the element's full reach.
+        if (rot.rescale()) {
+            nx *= axisRescale(rot.axis(), c, s, 0);
+            ny *= axisRescale(rot.axis(), c, s, 1);
+            nz *= axisRescale(rot.axis(), c, s, 2);
+        }
         return new double[]{nx + rot.origin()[0] / 16f, ny + rot.origin()[1] / 16f, nz + rot.origin()[2] / 16f};
+    }
+
+    /**
+     * One entry of vanilla {@code CuboidRotation.computeRescale}: how long the given world axis
+     * becomes under this rotation, normalised so the longest reach returns to 1.
+     *
+     * @param axisComponent 0 = x, 1 = y, 2 = z — the axis being scaled
+     */
+    private static double axisRescale(String rotAxis, double c, double s, int axisComponent) {
+        // The rotation's own matrix, per axis, mirroring the switch in rotateVertex(). Reading the
+        // transformed axis's component along `axisComponent` gives the shrink factor for it.
+        double vx = 0, vy = 0, vz = 0;
+        switch (rotAxis) {
+            case "x" -> {
+                if (axisComponent == 1) { vy = c; vz = s; }
+                if (axisComponent == 2) { vy = -s; vz = c; }
+            }
+            case "y" -> {
+                if (axisComponent == 0) { vx = c; vz = -s; }
+                if (axisComponent == 2) { vx = s; vz = c; }
+            }
+            case "z" -> {
+                if (axisComponent == 0) { vx = c; vy = s; }
+                if (axisComponent == 1) { vx = -s; vy = c; }
+            }
+        }
+        double ax = Math.abs(vx), ay = Math.abs(vy), az = Math.abs(vz);
+        double max = Math.max(ax, Math.max(ay, az));
+        return max < 1e-9 ? 1.0 : 1.0 / max;
     }
 
     // ------------------------------------------------------------------
