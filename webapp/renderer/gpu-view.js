@@ -172,7 +172,51 @@ class GpuView {
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
       this.buffers.push(vbo);
-      layers.push({ ordinal, quads, vbo });
+
+      // Translucent layers are split into depth buckets along Y. Blending is order-dependent and a
+      // static vertex order is only correct for the one camera the CPU rasteriser sorted for, so a
+      // dragged 3D view showed glass over water in arbitrary order — the "grey glass" gap between
+      // the export PNG and the live view. Buckets can be re-ordered per frame cheaply; quads within
+      // a bucket are near each other, so the residual error is small.
+      let layerEntry;
+      if (ordinal >= 2) {
+        const BUCKETS = 8;
+        const yLo = this._bucketScanY(data);
+        const yHi = this._bucketScanY(data, true);
+        const step = Math.max(1e-3, (yHi - yLo) / BUCKETS);
+        const parts = [];
+        for (let b = 0; b < BUCKETS; b++) {
+          const yMin = yLo + b * step, yMax = yMin + step;
+          const idx = [];
+          for (let q = 0; q < quads; q++) {
+            let sum = 0;
+            for (let vert = 0; vert < VERTICES_PER_QUAD; vert++) {
+              sum += data[q * VERTICES_PER_QUAD * FLOATS_PER_VERTEX + vert * FLOATS_PER_VERTEX + 1];
+            }
+            const cy = sum / VERTICES_PER_QUAD;
+            const bi = Math.min(BUCKETS - 1, Math.max(0, Math.floor((cy - yLo) / step)));
+            if (bi === b) idx.push(q);
+          }
+          if (!idx.length) continue;
+          const sub = new Float32Array(idx.length * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
+          for (let n = 0; n < idx.length; n++) {
+            sub.set(data.subarray(idx[n] * VERTICES_PER_QUAD * FLOATS_PER_VERTEX,
+              (idx[n] + 1) * VERTICES_PER_QUAD * FLOATS_PER_VERTEX),
+              n * VERTICES_PER_QUAD * FLOATS_PER_VERTEX);
+          }
+          const bVbo = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, bVbo);
+          gl.bufferData(gl.ARRAY_BUFFER, sub, gl.STATIC_DRAW);
+          this.buffers.push(bVbo);
+          // A bucket's midpoint drives its draw order relative to the camera.
+          const midY = yMin + step / 2;
+          parts.push({ vbo: bVbo, quads: idx.length, key: midY });
+        }
+        layerEntry = { ordinal, quads, vbo, buckets: parts };
+      } else {
+        layerEntry = { ordinal, quads, vbo };
+      }
+      layers.push(layerEntry);
       uploaded += quads;
 
       for (let v = 0; v < floats; v += FLOATS_PER_VERTEX) {
@@ -199,6 +243,16 @@ class GpuView {
     const dz = (hi[2] - lo[2]) / 2;
     this.radius = Math.max(1e-3, Math.sqrt(dx * dx + dy * dy + dz * dz));
     return { layers: layerCount, quads: uploaded, totalVertices, min: lo, max: hi, center: this.center, radius: this.radius };
+  }
+
+  /** Smallest (or largest) vertex Y in a layer's float data, for bucket bounds. */
+  _bucketScanY(data, max = false) {
+    let best = max ? -Infinity : Infinity;
+    for (let v = 1; v < data.length; v += FLOATS_PER_VERTEX) {
+      const y = data[v];
+      if (max ? y > best : y < best) best = y;
+    }
+    return best === (max ? -Infinity : Infinity) ? 0 : best;
   }
 
   uploadAtlas(image) {
@@ -372,16 +426,34 @@ class GpuView {
       // for every viewpoint without an order-independent pass.
       gl.depthMask(!blending);
 
-      gl.bindBuffer(gl.ARRAY_BUFFER, layer.vbo);
-      gl.enableVertexAttribArray(this.attr.pos);
-      gl.vertexAttribPointer(this.attr.pos, 3, gl.FLOAT, false, stride, 0);
-      gl.enableVertexAttribArray(this.attr.uv);
-      gl.vertexAttribPointer(this.attr.uv, 2, gl.FLOAT, false, stride, 12);
-      gl.enableVertexAttribArray(this.attr.shade);
-      gl.vertexAttribPointer(this.attr.shade, 1, gl.FLOAT, false, stride, 20);
-      gl.enableVertexAttribArray(this.attr.tint);
-      gl.vertexAttribPointer(this.attr.tint, 3, gl.FLOAT, false, stride, 24);
-      gl.drawArrays(gl.TRIANGLES, 0, layer.quads * VERTICES_PER_QUAD);
+      const drawSlice = (vbo, count) => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.enableVertexAttribArray(this.attr.pos);
+        gl.vertexAttribPointer(this.attr.pos, 3, gl.FLOAT, false, stride, 0);
+        gl.enableVertexAttribArray(this.attr.uv);
+        gl.vertexAttribPointer(this.attr.uv, 2, gl.FLOAT, false, stride, 12);
+        gl.enableVertexAttribArray(this.attr.shade);
+        gl.vertexAttribPointer(this.attr.shade, 1, gl.FLOAT, false, stride, 20);
+        gl.enableVertexAttribArray(this.attr.tint);
+        gl.vertexAttribPointer(this.attr.tint, 3, gl.FLOAT, false, stride, 24);
+        gl.drawArrays(gl.TRIANGLES, 0, count * VERTICES_PER_QUAD);
+      };
+
+      if (layer.buckets) {
+        // Blending layers draw far-to-near relative to the camera so nearer glass composites over
+        // farther water. The bucket key is a world-space Y; transform it by the view matrix and
+        // sort by view-space depth. Only the buckets are ordered — quads inside one bucket are
+        // within a slab of the build and their mutual order error is negligible.
+        const m = viewProj;
+        const ordered = layer.buckets.slice().sort((a, b) => {
+          const za = m[2] * a.key + m[14];
+          const zb = m[2] * b.key + m[14];
+          return zb - za;    // larger view Z = farther = drawn first
+        });
+        for (const b of ordered) drawSlice(b.vbo, b.quads);
+      } else {
+        drawSlice(layer.vbo, layer.quads);
+      }
     }
     gl.depthMask(true);
   }
