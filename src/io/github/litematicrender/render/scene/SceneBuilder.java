@@ -197,24 +197,9 @@ public final class SceneBuilder {
         this.lightOrigin = new int[]{minX, minY, minZ};
         this.lightSize = new int[]{sx, sy, sz};
 
-        // A litematic stores all water as sources; the stepped surface is a runtime simulation.
-        // Run it here so the fluid renderer sees level 1..7 on flowing water — the same thing the
-        // game's fluid ticks do on load. Confined to the box, so nothing spills outside it. The
-        // simulated level grid is kept beside the schematic lookups, and ownHeight() prefers it.
-        FluidSimulation fluid = new FluidSimulation(cells, sx, sy, sz, this.shapes, 64);
-        fluid.run();
-        fluid.apply();
-        this.simLevels = fluid.levels();
-
         this.light = new LightVolume(sx, sy, sz, cells, this.shapes);
         this.light.compute();
     }
-
-    /**
-     * The simulated water level grid (8 = source, 1..7 flowing, 0 = dry), indexed like the light
-     * volume, or null before build().
-     */
-    private byte[] simLevels;
 
     /** The light volume, or null before build()/when there is nothing to light. */
     private LightVolume light;
@@ -944,11 +929,10 @@ public final class SceneBuilder {
      * block is also 8/9; treating level 0 as a full block renders every source one pixel too high.
      */
     private float ownHeight(BlockState s, int x, int y, int z) {
-        // The simulation's level grid wins when present: a schematic stores every water block
-        // without a level, so the property alone would read every cell as a full source and the
-        // stepped surface would vanish.
-        int sim = this.simulatedLevel(x, y, z);
-        if (sim > 0) return sim / 9f;
+        // quickcraft parity: it feeds the palette's state straight into the game's FluidState, where
+        // a water block with no level property IS a source (level 0 → amount 8). Simulating flow
+        // here would invent levels the file never carried and diverge from both quickcraft and the
+        // in-game display of the same schematic.
         String level = s.getValue("level");
         if (level == null) return 8f / 9f;
         try {
@@ -958,21 +942,6 @@ public final class SceneBuilder {
         } catch (NumberFormatException e) {
             return 8f / 9f;
         }
-    }
-
-    /**
-     * The simulated water level at world (x,y,z), or 0 when the point is outside the simulation or
-     * holds no water. The callers track the current block position in {@code blockX/Y/Z} because
-     * the level grid is addressed in the light volume's local frame.
-     */
-    private int simulatedLevel(int x, int y, int z) {
-        if (this.simLevels == null || this.lightOrigin == null) return 0;
-        int lx = x - this.lightOrigin[0], ly = y - this.lightOrigin[1], lz = z - this.lightOrigin[2];
-        if (lx < 0 || ly < 0 || lz < 0
-            || lx >= this.lightSize[0] || ly >= this.lightSize[1] || lz >= this.lightSize[2]) {
-            return 0;
-        }
-        return this.simLevels[(ly * this.lightSize[2] + lz) * this.lightSize[0] + lx] & 0xFF;
     }
 
     /** Vanilla {@code FluidRenderer.calculateAverageHeight}: heights ≥ 0.8 count ten times. */
