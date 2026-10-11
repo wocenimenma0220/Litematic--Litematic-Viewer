@@ -76,9 +76,19 @@ public final class BlockShape {
         return isFullCubeModel(state);
     }
 
-    /** Vanilla {@code getShadeBrightness}: the per-corner AO term. */
+    /**
+     * Vanilla {@code getShadeBrightness}: the per-corner AO term.
+     *
+     * <p>The base rule is "a full collision cube darkens AO to 0.2" — but it is only the base rule.
+     * TransparentBlock and every block registered with {@code noOcclusion()} override it to 1.0, and
+     * glass is the case that matters: its collision shape IS a full cube, so the shape test alone
+     * would score it 0.2, and a glass wall would then darken everything behind it as if it were
+     * stone. The opacity test below is what separates them: a block whose textures let light
+     * through never casts AO, exactly like the override in the game.
+     */
     public float shadeBrightness(BlockState state) {
         if (state == null || state.isAir()) return SHADE_OPEN;
+        if (!this.occludes(state)) return SHADE_OPEN;
         return isShapeFullBlock(state) ? SHADE_FULL_BLOCK : SHADE_OPEN;
     }
 
