@@ -911,6 +911,13 @@ public final class SceneBuilder {
      * Vanilla {@code FluidRenderer.getHeight}: the fluid's own height, {@code 1} when the same
      * fluid sits directly above (a falling column is full height), {@code -1} for a solid neighbour
      * (that side is hidden) and {@code 0} for a passable one.
+     *
+     * <p>The {@code -1} test is {@code BlockState.isSolid()} in the original, which asks only whether
+     * the collision shape fills the block — not whether its texture is opaque. Using the occlusion
+     * test here instead marked glass, leaves and other see-through full cubes as "passable" (0) when
+     * vanilla skips them (-1). A skipped corner contributes nothing to the weighted average; a zero
+     * corner drags it down, and neighbouring corners disagreeing is what tore the water surface into
+     * the large diagonal facets.
      */
     private float fluidHeight(int x, int y, int z, String self) {
         BlockState s = this.blockAt(x, y, z);
@@ -919,7 +926,7 @@ public final class SceneBuilder {
             if (isSameFluid(x, y + 1, z, self)) return 1f;
             return ownHeight(s, x, y, z);
         }
-        return this.shapes.occludes(s) ? -1f : 0f;
+        return this.shapes.isShapeFullBlock(s) ? -1f : 0f;
     }
 
     /**
