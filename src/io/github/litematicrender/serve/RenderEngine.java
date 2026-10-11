@@ -87,6 +87,16 @@ public final class RenderEngine implements AutoCloseable {
      * {@code assets/<namespace>/...} layout. A pack only needs to cover the blocks it changes —
      * anything missing falls through to vanilla.
      */
+    /**
+     * Builtin packs that exist purely to make the renderer work — static model support (FastChest)
+     * and entity textures for the block-entity pass. They are infrastructure rather than look packs,
+     * so the UI hides them; the two real built-in look packs stay listed.
+     */
+    private static final java.util.Set<String> HIDDEN_BUILTINS = java.util.Set.of(
+        "fast-chest", "block-entity-textures"
+    );
+
+    /** Every builtin pack, infrastructure included — this is the resource stack to load. */
     public List<Path> builtinPacks() {
         List<Path> out = new ArrayList<>();
         Path dir = this.home.resolve("assets/builtin");
@@ -102,6 +112,13 @@ public final class RenderEngine implements AutoCloseable {
             // a missing builtin folder is a valid configuration
         }
         return out;
+    }
+
+    /** The builtin packs worth showing in the UI: the look packs, not the plumbing. */
+    public List<Path> visibleBuiltinPacks() {
+        return builtinPacks().stream()
+            .filter(p -> !HIDDEN_BUILTINS.contains(p.getFileName().toString().toLowerCase()))
+            .toList();
     }
 
     /** Loads (or reloads) the resource stack: vanilla, then built-ins, then the given pack root. */
@@ -133,6 +150,9 @@ public final class RenderEngine implements AutoCloseable {
         List<String> builtinNames = new ArrayList<>();
         for (Path p : builtin) {
             res.importPackUnchecked(p);
+        }
+        // Report only the look packs; the plumbing packs load silently above.
+        for (Path p : visibleBuiltinPacks()) {
             builtinNames.add(p.getFileName().toString());
         }
         List<String> userNames = new ArrayList<>();
