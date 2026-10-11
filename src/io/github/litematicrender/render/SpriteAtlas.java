@@ -344,6 +344,26 @@ public final class SpriteAtlas {
                 fw = img.width;
                 fh = img.height;
             }
+            // Stained glass reads as grey unless its alpha is fully opaque.
+            //
+            // The vanilla textures carry partial alpha (white stained glass averages ~46%), which
+            // renders faithfully but composites against whatever is behind the block. Over the
+            // checkerboard, or stacked over dark interiors, that reads as a muddy grey, and the
+            // viewer asked for these blocks to be opaque instead. Raising every non-zero alpha to
+            // 255 keeps the texture's colours and the fully transparent holes, and turns the
+            // pane-colour glass into a solid tinted block. On request; revisiting means removing
+            // this branch.
+            if (spriteId.startsWith("minecraft:block/") && spriteId.contains("stained_glass")) {
+                for (int y = 0; y < img.height; y++) {
+                    for (int x = 0; x < img.width; x++) {
+                        int argb = img.pixel(x, y);
+                        int a = Image.alpha(argb);
+                        if (a != 0 && a != 255) {
+                            img.setPixel(x, y, (argb & 0x00FFFFFF) | 0xFF000000);
+                        }
+                    }
+                }
+            }
             // Frame count is rows x columns, matching SpriteContents.createAnimatedTexture.
             int frameCount = (img.height / fh) * (img.width / fw);
             if (frames == null) {

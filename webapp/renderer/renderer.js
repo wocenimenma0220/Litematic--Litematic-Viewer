@@ -38,7 +38,6 @@ const els = {
   busyText: $('busyText'),
   log: $('log'),
   stats: $('stats'),
-  checker: $('checker'),
   bgMode: $('bgMode'),
   packList: $('packList'),
   menuFile: $('menuFile'),
@@ -526,11 +525,7 @@ els.bgMode.addEventListener('change', () => {
   // their own clear colour over it.
   const transparent = els.bgMode.value === 'checker';
   els.viewport.classList.toggle('checker', transparent);
-  els.checker.checked = transparent;
   drawView();
-});
-els.checker.addEventListener('change', () => {
-  els.viewport.classList.toggle('checker', els.checker.checked);
 });
 
 // --- WASD fly mode ----------------------------------------------------------

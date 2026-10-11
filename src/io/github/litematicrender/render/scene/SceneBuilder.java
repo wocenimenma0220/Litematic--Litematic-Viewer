@@ -145,57 +145,79 @@ public final class SceneBuilder {
     // Block entities
 
     /**
-     * Emits geometry for block entities whose blockstate model carries no elements.
+     * Emits geometry for blocks the model system cannot draw.
      *
-     * <p>Only chests, shulker boxes and skulls need this. Everything else with a block entity —
-     * hoppers, furnaces, dispensers, droppers, crafters, brewing stands, jukeboxes, comparators,
-     * chiseled bookshelves, beacons, enchanting tables, bells — is fully described by its
-     * blockstate model and is already emitted by {@link #emitBlock}. {@code DiagModelless} proves
-     * that split, which is why this method keys on the block id rather than on the presence of
-     * entity data: a hopper has entity data too, and needs nothing here.
+     * <p>Two membership rules meet here. Chests and shulker boxes need entity-driven geometry and
+     * historically were emitted per block-entity entry; heads belong on the same list but carry
+     * their facing in the blockstate ({@code rotation 0..15}), which a fixture can express without
+     * any tile-entity data at all. So the scan walks every block, and the per-id switch decides what
+     * needs building: a hopper has entity data too, and correctly contributes nothing.
      */
     private void emitBlockEntities(SceneMesh mesh, LitematicaSchematic.Region region, int[] off) {
-        if (region.blockEntities.isEmpty()) return;
-        for (java.util.Map.Entry<Long, ?> e : region.blockEntities.entrySet()) {
-            long key = e.getKey();
-            // The schematic stores entity positions in its own packed form; use its accessors
-            // rather than re-deriving the bit layout, which is (x << 38) | (z << 12) | y.
-            int lx = LitematicaSchematic.unpackX(key);
-            int ly = LitematicaSchematic.unpackY(key);
-            int lz = LitematicaSchematic.unpackZ(key);
-            if (lx < 0 || ly < 0 || lz < 0
-                || lx >= region.blocks.sizeX || ly >= region.blocks.sizeY || lz >= region.blocks.sizeZ) {
-                continue;
-            }
-            BlockState state = region.blocks.get(lx, ly, lz);
-            if (state == null) continue;
+        region.blocks.forEachNonAir((lx, ly, lz, state) -> {
             String id = state.blockId;
-            // A double chest is two blocks, each with type=left/right and a half-width model that
-            // omits the shared face. Reading the property here is what keeps the two halves from
-            // drawing full-width lids over the same space.
-            String chestType = state.getValue("type");
-            List<BlockEntityModels.Box> boxes = switch (id) {
-                case "minecraft:chest", "minecraft:trapped_chest" ->
-                    BlockEntityModels.chest(chestType, chestSprite(id));
-                case "minecraft:ender_chest" -> BlockEntityModels.chest(chestType, "minecraft:entity/chest/ender");
-                default -> null;
-            };
-            if (boxes == null) {
-                // Shulker boxes are named per colour, and skulls per mob, so match by suffix.
-                if (id.endsWith("shulker_box")) {
-                    boxes = BlockEntityModels.shulkerBox(shulkerSprite(id));
-                } else if (id.endsWith("_head") || id.endsWith("_skull")) {
-                    boxes = BlockEntityModels.skull(headSprite(id));
-                }
+            boolean isChest = id.equals("minecraft:chest") || id.equals("minecraft:trapped_chest")
+                || id.equals("minecraft:ender_chest");
+            boolean isShulker = id.endsWith("shulker_box");
+            boolean isHead = id.endsWith("_head") || id.endsWith("_skull");
+            if (!isChest && !isShulker && !isHead) return;
+            this.emitModellessBlock(mesh, region, off, lx, ly, lz, state);
+        });
+    }
+
+    /** Emits one model-less block. Lives here so the scan above stays a single readable filter. */
+    private void emitModellessBlock(SceneMesh mesh, LitematicaSchematic.Region region, int[] off,
+                                    int lx, int ly, int lz, BlockState state) {
+        String id = state.blockId;
+        // A double chest is two blocks, each with type=left/right and a half-width model that
+        // omits the shared face. Reading the property here is what keeps the two halves from
+        // drawing full-width lids over the same space.
+        String chestType = state.getValue("type");
+        List<BlockEntityModels.Box> boxes = switch (id) {
+            case "minecraft:chest", "minecraft:trapped_chest" ->
+                BlockEntityModels.chest(chestType, chestSprite(id));
+            case "minecraft:ender_chest" -> BlockEntityModels.chest(chestType, "minecraft:entity/chest/ender");
+            default -> null;
+        };
+        if (boxes == null) {
+            // Shulker boxes are named per colour, and skulls per mob, so match by suffix.
+            if (id.endsWith("shulker_box")) {
+                boxes = BlockEntityModels.shulkerBox(shulkerSprite(id));
+            } else if (id.endsWith("_head") || id.endsWith("_skull")) {
+                boxes = BlockEntityModels.skull(headSprite(id));
             }
-            if (boxes == null) continue;
-            int x = off[0] + lx, y = off[1] + ly, z = off[2] + lz;
-            // The chest's own facing turns its geometry; its closed interior is skipped.
-            String facing = state.getValue("facing");
-            for (BlockEntityModels.Box box : boxes) {
+        }
+        if (boxes == null) return;
+        int x = off[0] + lx, y = off[1] + ly, z = off[2] + lz;
+        for (BlockEntityModels.Box box : boxes) {
+            if (id.endsWith("_head") || id.endsWith("_skull")) {
+                // A ground head turns with its rotation property (0..15, 22.5-degree steps,
+                // 0 = facing south). The chest path needs no rotation here because emitBox
+                // reads the facing directly.
+                this.emitHead(mesh, box, x, y, z, state.getValue("rotation"));
+            } else {
+                // The chest's own facing turns its geometry; its closed interior is skipped.
+                String facing = state.getValue("facing");
                 this.emitBox(mesh, box, x, y, z, facing, true);
             }
         }
+    }
+    /**
+     * Emits a head rotated by its {@code rotation} value.
+     *
+     * <p>Vanilla's skull entity renderer turns the model by {@code rotation * 22.5 - 180} degrees
+     * about Y. The 180 offset matters: rotation 0 means the face looks south, and the skull model
+     * here is authored face-north, so without the flip every head showed its back.
+     */
+    private void emitHead(SceneMesh mesh, BlockEntityModels.Box box, int x, int y, int z, String rotation) {
+        int r;
+        try {
+            r = Integer.parseInt(rotation == null ? "0" : rotation);
+        } catch (NumberFormatException e) {
+            r = 0;
+        }
+        float angle = (float) Math.toRadians(r * 22.5f - 180f);
+        this.emitBoxRotated(mesh, box, x, y, z, angle);
     }
 
     /** Sprite for a wooden chest: one sprite holds the body, lid and lock unwrap. */
@@ -287,6 +309,75 @@ public final class SceneBuilder {
             x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1,  u2, v1, u3, v2);
         face(mesh, box, facing, skipInterior, Quad.SOUTH,
             x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1,  u3, v1, u4, v2);
+    }
+
+    /**
+     * Emits a box rotated by an arbitrary angle about Y — the ground-head case.
+     *
+     * <p>Heads rotate in 22.5-degree steps, which no quarter-turn decomposition reaches, so this
+     * rotates every corner directly. The same 16-pixel model-space box and the same
+     * {@code ModelPart.Cube} unwrap are used; only the corner placement differs from {@link #emitBox}.
+     */
+    private void emitBoxRotated(SceneMesh mesh, BlockEntityModels.Box box, int wx, int wy, int wz,
+                                float angle) {
+        float[] f = box.from();
+        float[] t = box.to();
+        float x0 = wx + f[0] / 16f, x1 = wx + t[0] / 16f;
+        float y0 = wy + f[1] / 16f, y1 = wy + t[1] / 16f;
+        float z0 = wz + f[2] / 16f, z1 = wz + t[2] / 16f;
+        float w = box.width(), h = box.height(), d = box.depth();
+
+        float ox = box.originX(), oy = box.originY();
+        float u0 = ox, u1 = ox + d, u2 = ox + d + w, u22 = ox + d + 2 * w;
+        float u3 = ox + d + w + d, u4 = ox + d + w + d + w;
+        float v0 = oy, v1 = oy + d, v2 = oy + d + h;
+
+        // Rotate about the block centre: (x, z) -> (cx + dx·cos - dz·sin, cz + dx·sin + dz·cos).
+        float cx = wx + 0.5f, cz = wz + 0.5f;
+        float c = (float) Math.cos(angle), s = (float) Math.sin(angle);
+        java.util.function.UnaryOperator<float[]> rot = (p) -> {
+            float dx = p[0] - cx, dz = p[2] - cz;
+            return new float[]{cx + dx * c - dz * s, p[1], cz + dx * s + dz * c};
+        };
+
+        // Each face keeps its own cardinal lighting from the UNROTATED orientation; at 22.5-degree
+        // steps the difference is small, and the vanilla entity renderer does the same.
+        emitBoxFaceRotated(mesh, box, Quad.DOWN, rot,
+            x0, y0, z0,  x0, y0, z1,  x1, y0, z1,  x1, y0, z0,  u1, v0, u2, v1);
+        emitBoxFaceRotated(mesh, box, Quad.UP, rot,
+            x0, y1, z0,  x0, y1, z1,  x1, y1, z1,  x1, y1, z0,  u2, v1, u22, v0);
+        emitBoxFaceRotated(mesh, box, Quad.WEST, rot,
+            x0, y0, z0,  x0, y0, z1,  x0, y1, z1,  x0, y1, z0,  u0, v1, u1, v2);
+        emitBoxFaceRotated(mesh, box, Quad.NORTH, rot,
+            x1, y0, z0,  x0, y0, z0,  x0, y1, z0,  x1, y1, z0,  u1, v1, u2, v2);
+        emitBoxFaceRotated(mesh, box, Quad.EAST, rot,
+            x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1,  u2, v1, u3, v2);
+        emitBoxFaceRotated(mesh, box, Quad.SOUTH, rot,
+            x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1,  u3, v1, u4, v2);
+    }
+
+    /** Emits one face of an arbitrarily-rotated box, applying the rotation to its four corners. */
+    private void emitBoxFaceRotated(SceneMesh mesh, BlockEntityModels.Box box, int face,
+                                    java.util.function.UnaryOperator<float[]> rot,
+                                    float ax, float ay, float az, float bx, float by, float bz,
+                                    float cx, float cy, float cz, float dx, float dy, float dz,
+                                    float tu0, float tv0, float tu1, float tv1) {
+        float su0 = tu0 / box.texW(), su1 = tu1 / box.texW();
+        float sv0 = tv0 / box.texH(), sv1 = tv1 / box.texH();
+        float[] pa = rot.apply(new float[]{ax, ay, az});
+        float[] pb = rot.apply(new float[]{bx, by, bz});
+        float[] pc = rot.apply(new float[]{cx, cy, cz});
+        float[] pd = rot.apply(new float[]{dx, dy, dz});
+        float[] xs = {pa[0], pb[0], pc[0], pd[0]};
+        float[] ys = {pa[1], pb[1], pc[1], pd[1]};
+        float[] zs = {pa[2], pb[2], pc[2], pd[2]};
+        float[] pu = {su0, su0, su1, su1};
+        float[] pv = {sv1, sv0, sv0, sv1};
+        SceneMesh.MeshQuad q = new SceneMesh.MeshQuad(xs, ys, zs,
+            pu[0], pv[0], pu[1], pv[1], pu[2], pv[2], pu[3], pv[3],
+            box.sprite(), 0xFFFFFFFF, null, 1f, 1f, 1f, CARDINAL[face], null,
+            SceneMesh.Layer.CUTOUT, false);
+        mesh.cutout.add(q);
     }
 
     /**

@@ -244,3 +244,10 @@ body.flying .viewport { cursor: none; }
 .muted { color: var(--muted); }
 .small { font-size: 11px; }
 .hidden { display: none !important; }
+
+/* The viewer backdrop selector: auto width so the label text stays readable without inline styles,
+   which the Content-Security-Policy blocks. */
+#bgMode {
+  width: auto;
+  padding: 2px 6px;
+}

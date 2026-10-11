@@ -609,13 +609,15 @@ public final class ModelBaker {
 
         /** Left-multiplies m by the vanilla y-rotation of the given 0/90/180/270 value. */
         private static double[][] composeY(double[][] m, int deg) {
-            // BLOCK_ROT_Y_90 = ROT_90_Y_NEG = P321 with invertX, from OctahedralGroup:
-            // scaling(-1,1,1) x [[0,0,1],[0,1,0],[1,0,0]] = [[0,0,-1],[0,1,0],[-1,0,0]],
-            // which sends +Z (south) to -X (west) and +X (east) to -Z (north).
+            // BLOCK_ROT_Y_90 = ROT_90_Y_NEG = P321 with invertX (OctahedralGroup line 36):
+            // scaling(-1,1,1) · P321 = [[0,0,-1],[0,1,0],[1,0,0]] — a proper rotation (det +1) that
+            // sends east→south and south→west. y=270 is ROT_90_Y_POS (invertZ): east→north.
+            // Getting a row/column scale wrong here turns the rotation into a reflection, which is
+            // exactly the "one side reversed" symptom on stairs, torches and levers.
             return switch (deg) {
-                case 90 -> mul(new double[][]{{0, 0, -1}, {0, 1, 0}, {-1, 0, 0}}, m);
+                case 90 -> mul(new double[][]{{0, 0, -1}, {0, 1, 0}, {1, 0, 0}}, m);
                 case 180 -> mul(new double[][]{{-1, 0, 0}, {0, 1, 0}, {0, 0, -1}}, m);
-                case 270 -> mul(new double[][]{{0, 0, 1}, {0, 1, 0}, {1, 0, 0}}, m);
+                case 270 -> mul(new double[][]{{0, 0, 1}, {0, 1, 0}, {-1, 0, 0}}, m);
                 default -> m;
             };
         }

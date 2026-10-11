@@ -123,6 +123,13 @@ public final class BlockRegistry {
                 }
             }
         }
+        if (HEADED_BLOCKS.contains(blockId)) {
+            for (Map.Entry<String, List<String>> e : HEADED_PROPERTIES.entrySet()) {
+                if (!propValues.containsKey(e.getKey())) {
+                    propValues.put(e.getKey(), valuesFor(e.getValue()));
+                }
+            }
+        }
         // `waterlogged` is a property of around forty vanilla block classes (leaves, stairs, fences,
         // slabs, coral, ...). It never appears in a blockstate json, because whether a block is
         // waterlogged does not change its model — the fluid is drawn separately. Without it here,
@@ -185,6 +192,26 @@ public final class BlockRegistry {
     /** Blocks that take the model-less property set above. */
     private static final java.util.Set<String> MODELLESS_BLOCKS = java.util.Set.of(
         "minecraft:chest", "minecraft:trapped_chest", "minecraft:ender_chest"
+    );
+
+    /**
+     * Property sets for other blocks whose blockstate json ignores a property the game keeps.
+     *
+     * <p>Heads are the case here: {@code skeleton_skull.json} has one empty variant, because the
+     * entity renderer rotates the model from the block's {@code rotation} value (0..15, in
+     * 22.5-degree steps). Without it in the table, tryWith() dropped the property and every head
+     * faced the same way.
+     */
+    private static final Map<String, List<String>> HEADED_PROPERTIES = Map.of(
+        "rotation", List.of("0", "1", "2", "3", "4", "5", "6", "7",
+                            "8", "9", "10", "11", "12", "13", "14", "15")
+    );
+
+    /** Blocks that take the headed property set above (ground-standing heads and skulls). */
+    private static final java.util.Set<String> HEADED_BLOCKS = java.util.Set.of(
+        "minecraft:skeleton_skull", "minecraft:wither_skeleton_skull",
+        "minecraft:player_head", "minecraft:zombie_head", "minecraft:creeper_head",
+        "minecraft:piglin_head", "minecraft:dragon_head"
     );
 
     @SuppressWarnings("unchecked")
