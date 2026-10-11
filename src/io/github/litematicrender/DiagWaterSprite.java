@@ -40,10 +40,10 @@ public final class DiagWaterSprite {
         SceneMesh mesh = builder.build();
 
         java.util.Map<String, Integer> bySprite = new java.util.TreeMap<>();
-        for (SceneMesh.MeshQuad q : mesh.fluid) {
+        for (SceneMesh.MeshQuad q : mesh.translucent) {
             bySprite.merge(String.valueOf(q.spriteId), 1, Integer::sum);
         }
-        System.out.println("fluid quads: " + mesh.fluid.size());
+        System.out.println("translucent quads (fluid lives here since the layer merge): " + mesh.translucent.size());
         bySprite.forEach((k, v) -> System.out.printf("  %-38s %6d%n", k, v));
         System.out.println();
         System.out.println(bySprite.containsKey("minecraft:block/water_flow")
