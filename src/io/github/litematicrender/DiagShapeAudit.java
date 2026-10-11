@@ -66,17 +66,20 @@ public final class DiagShapeAudit {
             if (got) { System.out.println("  FAIL " + id + " -> true (expected false)"); bad++; }
         }
 
-        // AO must darken on blocks whose COLLISION shape is a full cube, even when the block
-        // does not occlude (glass, soul sand). Vanilla: getShadeBrightness uses the collision shape.
-        System.out.println("== AO shade must be 0.2 (full collision cube) ==");
-        for (String n : new String[]{"stone", "glass", "ice", "soul_sand", "white_stained_glass"}) {
+        // AO must darken on blocks whose COLLISION shape is a full cube AND whose textures are
+        // opaque. Glass, ice and stained glass have full collision cubes but light passes through
+        // them, and vanilla's TransparentBlock overrides getShadeBrightness to 1.0 — they must not
+        // cast ambient occlusion. Soul sand is the opaque counter-case: full cube, casts shadow.
+        System.out.println("== AO shade must be 0.2 (full opaque collision cube) ==");
+        for (String n : new String[]{"stone", "soul_sand"}) {
             String id = "minecraft:" + n;
             float sh = shapes.shadeBrightness(reg.getOrMissing(id).defaultState);
             boolean ok = Math.abs(sh - 0.2f) < 1e-4f;
             if (!ok) { System.out.println("  FAIL " + id + " shade=" + sh + " (expected 0.2)"); bad++; }
         }
-        System.out.println("== AO shade must be 1.0 (not a full collision cube) ==");
-        for (String n : new String[]{"chest", "oak_slab", "oak_stairs", "hopper"}) {
+        System.out.println("== AO shade must be 1.0 (light-permeable or partial shape) ==");
+        for (String n : new String[]{"chest", "oak_slab", "oak_stairs", "hopper",
+                "glass", "ice", "white_stained_glass"}) {
             String id = "minecraft:" + n;
             float sh = shapes.shadeBrightness(reg.getOrMissing(id).defaultState);
             boolean ok = Math.abs(sh - 1.0f) < 1e-4f;
