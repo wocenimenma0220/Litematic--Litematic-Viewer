@@ -145,22 +145,18 @@ public final class SceneBuilder {
     // Block entities
 
     /**
-     * Emits geometry for blocks the model system cannot draw.
+     * Emits geometry for blocks the vanilla model set cannot draw.
      *
-     * <p>Two membership rules meet here. Chests and shulker boxes need entity-driven geometry and
-     * historically were emitted per block-entity entry; heads belong on the same list but carry
-     * their facing in the blockstate ({@code rotation 0..15}), which a fixture can express without
-     * any tile-entity data at all. So the scan walks every block, and the per-id switch decides what
-     * needs building: a hopper has entity data too, and correctly contributes nothing.
+     * <p>Only heads remain here. Chests left the list when their rendering moved to static blockstate
+     * models — the same approach as the FastChest mod, whose blockstate and model JSONs the project
+     * now ships in a builtin pack — because a hand-rolled {@code ModelPart.Cube} unwrap did not match
+     * the entity textures' actual layout and tore across every face.
      */
     private void emitBlockEntities(SceneMesh mesh, LitematicaSchematic.Region region, int[] off) {
         region.blocks.forEachNonAir((lx, ly, lz, state) -> {
             String id = state.blockId;
-            boolean isChest = id.equals("minecraft:chest") || id.equals("minecraft:trapped_chest")
-                || id.equals("minecraft:ender_chest");
-            boolean isShulker = id.endsWith("shulker_box");
             boolean isHead = id.endsWith("_head") || id.endsWith("_skull");
-            if (!isChest && !isShulker && !isHead) return;
+            if (!isHead) return;
             this.emitModellessBlock(mesh, region, off, lx, ly, lz, state);
         });
     }
@@ -169,37 +165,16 @@ public final class SceneBuilder {
     private void emitModellessBlock(SceneMesh mesh, LitematicaSchematic.Region region, int[] off,
                                     int lx, int ly, int lz, BlockState state) {
         String id = state.blockId;
-        // A double chest is two blocks, each with type=left/right and a half-width model that
-        // omits the shared face. Reading the property here is what keeps the two halves from
-        // drawing full-width lids over the same space.
-        String chestType = state.getValue("type");
-        List<BlockEntityModels.Box> boxes = switch (id) {
-            case "minecraft:chest", "minecraft:trapped_chest" ->
-                BlockEntityModels.chest(chestType, chestSprite(id));
-            case "minecraft:ender_chest" -> BlockEntityModels.chest(chestType, "minecraft:entity/chest/ender");
-            default -> null;
-        };
-        if (boxes == null) {
-            // Shulker boxes are named per colour, and skulls per mob, so match by suffix.
-            if (id.endsWith("shulker_box")) {
-                boxes = BlockEntityModels.shulkerBox(shulkerSprite(id));
-            } else if (id.endsWith("_head") || id.endsWith("_skull")) {
-                boxes = BlockEntityModels.skull(headSprite(id));
-            }
+        List<BlockEntityModels.Box> boxes = null;
+        if (id.endsWith("_head") || id.endsWith("_skull")) {
+            boxes = BlockEntityModels.skull(headSprite(id));
         }
         if (boxes == null) return;
         int x = off[0] + lx, y = off[1] + ly, z = off[2] + lz;
         for (BlockEntityModels.Box box : boxes) {
-            if (id.endsWith("_head") || id.endsWith("_skull")) {
-                // A ground head turns with its rotation property (0..15, 22.5-degree steps,
-                // 0 = facing south). The chest path needs no rotation here because emitBox
-                // reads the facing directly.
-                this.emitHead(mesh, box, x, y, z, state.getValue("rotation"));
-            } else {
-                // The chest's own facing turns its geometry; its closed interior is skipped.
-                String facing = state.getValue("facing");
-                this.emitBox(mesh, box, x, y, z, facing, true);
-            }
+            // A ground head turns with its rotation property (0..15, 22.5-degree steps,
+            // 0 = facing south).
+            this.emitHead(mesh, box, x, y, z, state.getValue("rotation"));
         }
     }
     /**
