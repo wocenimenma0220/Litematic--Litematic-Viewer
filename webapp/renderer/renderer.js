@@ -525,8 +525,22 @@ els.bgMode.addEventListener('change', () => {
   // their own clear colour over it.
   const transparent = els.bgMode.value === 'checker';
   els.viewport.classList.toggle('checker', transparent);
+  // The CSS backdrop and the WebGL clear colour must agree: with a transparent-capable canvas the
+  // browser composites the two, and a mismatch shows through wherever the framebuffer ends up
+  // partly transparent. Painting the viewport keeps every layer of the stack the same colour.
+  els.viewport.style.background = transparent ? '' : cssColor(els.bgMode.value);
   drawView();
 });
+
+/** The CSS colour matching each backdrop option, so the DOM and the framebuffer agree. */
+function cssColor(mode) {
+  switch (mode) {
+    case 'sky':   return '#8cb3ff';
+    case 'white': return '#ffffff';
+    case 'dark':  return '#292e36';
+    default:      return '';
+  }
+}
 
 // --- WASD fly mode ----------------------------------------------------------
 
