@@ -47,56 +47,6 @@ public final class BlockEntityModels {
     }
 
     /**
-     * A chest, from {@code ChestModel}'s three layer definitions.
-     *
-     * <p>Vanilla declares one single-width layer and two half-width ones for the halves of a double
-     * chest. The halves span 15/16 of the block — the missing sixteenth is the seam — and each omits
-     * the face that touches its neighbour, which is why a naive two-full-chests approximation shows
-     * doubled textures along the seam: both halves drew a full-width lid over the same space.
-     *
-     * <p>The vanilla {@code PartPose} offsets are folded into the coordinates here, so the caller
-     * sees plain block-space boxes. The lid is modelled closed, which is what a schematic needs: the
-     * open state lives in block entity data, not the blockstate.
-     *
-     * @param chestType one of {@code single}, {@code left}, {@code right} — the blockstate's
-     *                  {@code type} property
-     */
-    public static List<Box> chest(String chestType, String sprite) {
-        List<Box> boxes = new ArrayList<>(3);
-        // Older schematics omit the type property entirely; treat that as a single chest rather
-        // than failing, since a null here is data variation and not a caller error.
-        switch (chestType == null ? "single" : chestType) {
-            // createDoubleBodyLeftLayer: visibleFaces = all except WEST, boxes span x 0..15.
-            case "left" -> {
-                boxes.add(new Box(new float[]{0, 0, 1}, new float[]{15, 10, 15}, 0, 19, 64, 64, sprite));
-                boxes.add(new Box(new float[]{0, 9, 1}, new float[]{15, 14, 15}, 0, 0, 64, 64, sprite));
-                boxes.add(new Box(new float[]{0, 7, 15}, new float[]{1, 11, 16}, 0, 0, 64, 64, sprite));
-            }
-            // createDoubleBodyRightLayer: visibleFaces = all except EAST, boxes span x 1..16.
-            case "right" -> {
-                boxes.add(new Box(new float[]{1, 0, 1}, new float[]{16, 10, 15}, 0, 19, 64, 64, sprite));
-                boxes.add(new Box(new float[]{1, 9, 1}, new float[]{16, 14, 15}, 0, 0, 64, 64, sprite));
-                boxes.add(new Box(new float[]{15, 7, 15}, new float[]{16, 11, 16}, 0, 0, 64, 64, sprite));
-            }
-            // createSingleBodyLayer: the ordinary one-block chest.
-            default -> {
-                boxes.add(new Box(new float[]{1, 0, 1}, new float[]{15, 10, 15}, 0, 19, 64, 64, sprite));
-                boxes.add(new Box(new float[]{1, 9, 1}, new float[]{15, 14, 15}, 0, 0, 64, 64, sprite));
-                boxes.add(new Box(new float[]{7, 7, 15}, new float[]{9, 11, 16}, 0, 0, 64, 64, sprite));
-            }
-        }
-        return boxes;
-    }
-
-    /** The shulker box: a body and a lid that overhangs it by a pixel on each side. */
-    public static List<Box> shulkerBox(String sprite) {
-        List<Box> boxes = new ArrayList<>(2);
-        boxes.add(new Box(new float[]{1, 0, 1}, new float[]{15, 10, 15}, 0, 28, 64, 64, sprite));
-        boxes.add(new Box(new float[]{0, 10, 0}, new float[]{16, 16, 16}, 0, 0, 64, 64, sprite));
-        return boxes;
-    }
-
-    /**
      * A skull or head: an 8x8x8 cube on the block floor, inset to 4..12 like the game.
      *
      * <p>Heads use a 64x32 texture and the same unwrap, so the caller passes the right sprite.
