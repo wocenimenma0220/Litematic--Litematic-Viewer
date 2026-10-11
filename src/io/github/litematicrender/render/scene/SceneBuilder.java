@@ -203,14 +203,6 @@ public final class SceneBuilder {
         };
     }
 
-    /** Shulker boxes are one sprite per dye colour, named after it. */
-    private static String shulkerSprite(String blockId) {
-        String name = blockId.substring("minecraft:".length(), blockId.length() - "_box".length());
-        return name.equals("shulker") || name.isEmpty()
-            ? "minecraft:entity/shulker/shulker"
-            : "minecraft:entity/shulker/shulker_" + name;
-    }
-
     /**
      * Head sprite for a skull block.
      *
