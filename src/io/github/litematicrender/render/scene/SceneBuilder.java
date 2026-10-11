@@ -34,6 +34,20 @@ public final class SceneBuilder {
         {0,-1,0},{0,1,0},{0,0,-1},{0,0,1},{-1,0,0},{1,0,0}
     };
 
+    /**
+     * The lightmap factor for a face: the light level of the cell the face looks into, scaled to
+     * 0..1. Vanilla builds a 256-entry lightmap texture with a gamma curve and samples it; the
+     * linear scale here reaches the same endpoints (level 15 = full bright, level 0 = near black)
+     * and keeps the offline pipeline free of a texture round-trip.
+     */
+    private float faceLightScale(int x, int y, int z, int face) {
+        if (this.light == null) return 1f;
+        int[] d = FACE_DELTAS[face];
+        int level = this.light.faceLight(x - this.lightOrigin[0], y - this.lightOrigin[1],
+            z - this.lightOrigin[2], d[0], d[1], d[2]);
+        return 0.05f + 0.95f * (level / 15f);
+    }
+
     private final BlockRegistry registry;
     private final ModelBaker baker;
     private final Colormaps colormaps;
@@ -118,6 +132,8 @@ public final class SceneBuilder {
     // Scene assembly
 
     public SceneMesh build() {
+        // Light first: every emitted quad samples the volume, so it must exist before the pass runs.
+        this.computeLight();
         SceneMesh mesh = new SceneMesh();
         for (int ri = 0; ri < this.regions.size(); ri++) {
             LitematicaSchematic.Region region = this.regions.get(ri);
@@ -140,6 +156,70 @@ public final class SceneBuilder {
         subdivideInto(mesh.translucent, mesh.translucentSorted);
         return mesh;
     }
+
+    // ------------------------------------------------------------------
+    // Light
+
+    /**
+     * Builds the light volume over the tight bounding box of all regions and stores it.
+     *
+     * <p>The volume covers only the schematic plus nothing outside — queries outside return full
+     * sky, which is what an exposed surface should read anyway.
+     */
+    private void computeLight() {
+        int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE, minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE, maxY = Integer.MIN_VALUE, maxZ = Integer.MIN_VALUE;
+        for (int[] off : this.regionOffsets) {
+            minX = Math.min(minX, off[0]); minY = Math.min(minY, off[1]); minZ = Math.min(minZ, off[2]);
+        }
+        for (int i = 0; i < this.regions.size(); i++) {
+            var r = this.regions.get(i);
+            int[] off = this.regionOffsets.get(i);
+            maxX = Math.max(maxX, off[0] + r.blocks.sizeX - 1);
+            maxY = Math.max(maxY, off[1] + r.blocks.sizeY - 1);
+            maxZ = Math.max(maxZ, off[2] + r.blocks.sizeZ - 1);
+        }
+        if (minX > maxX) { this.light = null; return; }
+        final int fMinX = minX, fMinY = minY, fMinZ = minZ;
+        int sx = maxX - minX + 1, sy = maxY - minY + 1, sz = maxZ - minZ + 1;
+        // A nibble per cell would do; a byte per cell is simpler and the volume is small relative
+        // to the mesh itself (a 512^3 build is 134 MB here vs the multi-hundred-MB vertex data).
+        BlockState[] cells = new BlockState[sx * sy * sz];
+        java.util.Arrays.fill(cells, BlockState.air());
+        for (int i = 0; i < this.regions.size(); i++) {
+            var r = this.regions.get(i);
+            int[] off = this.regionOffsets.get(i);
+            r.blocks.forEachNonAir((lx, ly, lz, s) -> {
+                int gx = off[0] + lx - fMinX, gy = off[1] + ly - fMinY, gz = off[2] + lz - fMinZ;
+                cells[(gy * sz + gz) * sx + gx] = s;
+            });
+        }
+        this.lightOrigin = new int[]{minX, minY, minZ};
+        this.lightSize = new int[]{sx, sy, sz};
+
+        // A litematic stores all water as sources; the stepped surface is a runtime simulation.
+        // Run it here so the fluid renderer sees level 1..7 on flowing water — the same thing the
+        // game's fluid ticks do on load. Confined to the box, so nothing spills outside it. The
+        // simulated level grid is kept beside the schematic lookups, and ownHeight() prefers it.
+        FluidSimulation fluid = new FluidSimulation(cells, sx, sy, sz, this.shapes, 64);
+        fluid.run();
+        fluid.apply();
+        this.simLevels = fluid.levels();
+
+        this.light = new LightVolume(sx, sy, sz, cells, this.shapes);
+        this.light.compute();
+    }
+
+    /**
+     * The simulated water level grid (8 = source, 1..7 flowing, 0 = dry), indexed like the light
+     * volume, or null before build().
+     */
+    private byte[] simLevels;
+
+    /** The light volume, or null before build()/when there is nothing to light. */
+    private LightVolume light;
+    private int[] lightOrigin;
+    private int[] lightSize;
 
     // ------------------------------------------------------------------
     // Block entities
@@ -297,9 +377,13 @@ public final class SceneBuilder {
         float[] zs = {pa[2], pb[2], pc[2], pd[2]};
         float[] pu = {su0, su0, su1, su1};
         float[] pv = {sv1, sv0, sv0, sv1};
+        // Heads read the light at their own cell, sampled upward-ish per face like any block.
+        int[] n = FACE_DELTAS[face];
+        float lightScale = this.light == null ? 1f : this.faceLightScale(
+            Math.round(xs[0] - 0.5f), Math.round(ys[0] - 0.5f), Math.round(zs[0] - 0.5f), face);
         SceneMesh.MeshQuad q = new SceneMesh.MeshQuad(xs, ys, zs,
             pu[0], pv[0], pu[1], pv[1], pu[2], pv[2], pu[3], pv[3],
-            box.sprite(), 0xFFFFFFFF, null, 1f, 1f, 1f, CARDINAL[face], null,
+            box.sprite(), 0xFFFFFFFF, null, 1f, 1f, 1f, CARDINAL[face] * lightScale, null,
             SceneMesh.Layer.CUTOUT, false);
         mesh.cutout.add(q);
     }
@@ -424,6 +508,12 @@ public final class SceneBuilder {
     private void emitQuad(SceneMesh mesh, Quad q, int faceDir, int x, int y, int z, BlockState state, boolean ao) {
         int effectiveFace = faceDir >= 0 ? faceDir : Quad.UP;
         float shade = q.shadeFaceOverride >= 0 ? CARDINAL[q.shadeFaceOverride] : CARDINAL[effectiveFace];
+
+        // The lightmap term. A flush face samples the cell it looks into — the same cell the AO
+        // pass reads — and the vanilla lightmap turns a level of 15 into full brightness while
+        // level 0 sits near-black. Scaling by 15ths keeps the table linear; the lightmap curve's
+        // slight gamma is a visual nicety the offline renderer can skip.
+        shade *= this.faceLightScale(x, y, z, effectiveFace);
 
         float[] xs = {q.x0 + x, q.x1 + x, q.x2 + x, q.x3 + x};
         float[] ys = {q.y0 + y, q.y1 + y, q.y2 + y, q.y3 + y};
@@ -703,7 +793,7 @@ public final class SceneBuilder {
             float[] zs = {fz, fz + 1, fz + 1, fz};
             this.addFluidQuad(mesh, xs, ys, zs, u00, v00, u01, v01, u10, v10, u11, v11,
                 flow[0] == 0.0 && flow[1] == 0.0 ? stillSprite : flowSprite,
-                tr, tg, tb, CARDINAL[Quad.UP]);
+                tr, tg, tb, CARDINAL[Quad.UP] * this.fluidLightScale(x, y, z, Quad.UP));
         }
 
         // ---- bottom face ----------------------------------------------------
@@ -712,7 +802,7 @@ public final class SceneBuilder {
             float[] ys = {fy + bottomOffs, fy + bottomOffs, fy + bottomOffs, fy + bottomOffs};
             float[] zs = {fz, fz, fz + 1, fz + 1};
             this.addFluidQuad(mesh, xs, ys, zs, 0f, 0f, 1f, 0f, 1f, 1f, 0f, 1f,
-                stillSprite, tr, tg, tb, CARDINAL[Quad.DOWN]);
+                stillSprite, tr, tg, tb, CARDINAL[Quad.DOWN] * this.fluidLightScale(x, y, z, Quad.DOWN));
         }
 
         // ---- side faces -----------------------------------------------------
@@ -761,7 +851,7 @@ public final class SceneBuilder {
             float[] ys = {fy + hh0, fy + hh1, fy + bottomOffs, fy + bottomOffs};
             float[] zs = {z0, z1, z1, z0};
             this.addFluidQuad(mesh, xs, ys, zs, u0, v01, u1, v02, u1, v1, u0, v1,
-                flowSprite, tr, tg, tb, faceShade);
+                flowSprite, tr, tg, tb, faceShade * this.fluidLightScale(x, y, z, faceDir));
         }
     }
 
@@ -794,6 +884,18 @@ public final class SceneBuilder {
             u0, v0, u3, v3, u2, v2, u1, v1,
             sprite, 0xFFFFFFFF, null, tr, tg, tb, shade, null, SceneMesh.Layer.TRANSLUCENT, true);
         mesh.translucent.add(back);
+    }
+
+    /**
+     * The lightmap factor for a fluid face: the water surface reads the light of the cell it faces,
+     * which for the top face is the cell above the water.
+     */
+    private float fluidLightScale(int x, int y, int z, int face) {
+        if (this.light == null) return 1f;
+        int[] d = FACE_DELTAS[face];
+        int level = this.light.faceLight(x - this.lightOrigin[0], y - this.lightOrigin[1],
+            z - this.lightOrigin[2], d[0], d[1], d[2]);
+        return 0.05f + 0.95f * (level / 15f);
     }
 
     private static String fluidKey(BlockState s) {
@@ -830,7 +932,7 @@ public final class SceneBuilder {
         String k = fluidKeyOrNull(s);
         if (k != null && k.equals(self)) {
             if (isSameFluid(x, y + 1, z, self)) return 1f;
-            return ownHeight(s);
+            return ownHeight(s, x, y, z);
         }
         return this.shapes.occludes(s) ? -1f : 0f;
     }
@@ -841,7 +943,12 @@ public final class SceneBuilder {
      * is the {@code level} property itself (1..8). So a source is 8/9 tall and a level-8 flowing
      * block is also 8/9; treating level 0 as a full block renders every source one pixel too high.
      */
-    private static float ownHeight(BlockState s) {
+    private float ownHeight(BlockState s, int x, int y, int z) {
+        // The simulation's level grid wins when present: a schematic stores every water block
+        // without a level, so the property alone would read every cell as a full source and the
+        // stepped surface would vanish.
+        int sim = this.simulatedLevel(x, y, z);
+        if (sim > 0) return sim / 9f;
         String level = s.getValue("level");
         if (level == null) return 8f / 9f;
         try {
@@ -853,10 +960,24 @@ public final class SceneBuilder {
         }
     }
 
+    /**
+     * The simulated water level at world (x,y,z), or 0 when the point is outside the simulation or
+     * holds no water. The callers track the current block position in {@code blockX/Y/Z} because
+     * the level grid is addressed in the light volume's local frame.
+     */
+    private int simulatedLevel(int x, int y, int z) {
+        if (this.simLevels == null || this.lightOrigin == null) return 0;
+        int lx = x - this.lightOrigin[0], ly = y - this.lightOrigin[1], lz = z - this.lightOrigin[2];
+        if (lx < 0 || ly < 0 || lz < 0
+            || lx >= this.lightSize[0] || ly >= this.lightSize[1] || lz >= this.lightSize[2]) {
+            return 0;
+        }
+        return this.simLevels[(ly * this.lightSize[2] + lz) * this.lightSize[0] + lx] & 0xFF;
+    }
+
     /** Vanilla {@code FluidRenderer.calculateAverageHeight}: heights ≥ 0.8 count ten times. */
     private float avgHeight(String self, float hSelf, float h1, float h2,
-                            int cornerX, int cornerY, int cornerZ) {
-        if (h1 >= 1f || h2 >= 1f) return 1f;
+                            int cornerX, int cornerY, int cornerZ) {        if (h1 >= 1f || h2 >= 1f) return 1f;
         float sum = 0, weight = 0;
         if (h1 > 0f || h2 > 0f) {
             float hCorner = this.fluidHeight(cornerX, cornerY, cornerZ, self);
@@ -889,7 +1010,7 @@ public final class SceneBuilder {
      */
     private double[] fluidFlow(int x, int y, int z, String self) {
         double flowX = 0, flowZ = 0;
-        float selfHeight = ownHeight(this.blockAt(x, y, z));
+        float selfHeight = ownHeight(this.blockAt(x, y, z), x, y, z);
         int[][] dirs = {{0, 0, -1}, {0, 0, 1}, {-1, 0, 0}, {1, 0, 0}};   // north, south, west, east
         for (int[] d : dirs) {
             int nx = x + d[0], nz = z + d[2];
@@ -900,13 +1021,13 @@ public final class SceneBuilder {
             boolean sameFluid = nk != null && nk.equals(self);
             if (!ns.isAir() && !sameFluid) continue;
 
-            float neighborHeight = sameFluid ? ownHeight(ns) : 0f;
+            float neighborHeight = sameFluid ? ownHeight(ns, nx, y, nz) : 0f;
             float distance = 0f;
             if (neighborHeight == 0f) {
                 BlockState belowNeighbor = this.blockAt(nx, y - 1, nz);
                 String bk = fluidKeyOrNull(belowNeighbor);
                 if (bk != null && bk.equals(self)) {
-                    neighborHeight = ownHeight(belowNeighbor);
+                    neighborHeight = ownHeight(belowNeighbor, nx, y - 1, nz);
                     if (neighborHeight > 0f) {
                         distance = selfHeight - (neighborHeight - MAX_FLUID_HEIGHT);
                     }
