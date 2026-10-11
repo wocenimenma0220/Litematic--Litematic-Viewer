@@ -344,6 +344,23 @@ public final class SpriteAtlas {
                 fw = img.width;
                 fh = img.height;
             }
+            // Stained glass aligns with the glass pane's opacity, on request.
+            //
+            // The block texture carries ~46% alpha while the pane's is 90%, so a wall of glass
+            // blocks stacks two 46% faces along any sight line and reads grey where a pane wall
+            // reads white. Normalising the block sprite to the pane's alpha keeps the colours and
+            // the transparent holes while making the two render alike.
+            if (spriteId.startsWith("minecraft:block/") && spriteId.contains("stained_glass")) {
+                for (int y = 0; y < img.height; y++) {
+                    for (int x = 0; x < img.width; x++) {
+                        int argb = img.pixel(x, y);
+                        int a = Image.alpha(argb);
+                        if (a != 0 && a < 230) {
+                            img.setPixel(x, y, (argb & 0x00FFFFFF) | (230 << 24));
+                        }
+                    }
+                }
+            }
             // Frame count is rows x columns, matching SpriteContents.createAnimatedTexture.
             int frameCount = (img.height / fh) * (img.width / fw);
             if (frames == null) {
