@@ -198,7 +198,16 @@ async function buildView() {
     const res = await window.engine.exportScene();
     // Decode the atlas without fetch: the page's CSP has no `data:` in connect-src, so fetching a
     // data URL is blocked. Building the Blob locally avoids the network path entirely.
-    const atlasImage = await createImageBitmap(base64ToBlob(res.atlasDataUrl));
+    //
+    // premultiplyAlpha must be 'none'. The default lets the decoder multiply RGB by alpha, so a
+    // white stained-glass texel (255,255,255,163) arrives as (163,163,163,163); the shader then
+    // blends that already-darkened colour and glass reads grey in 3D while the CPU path, which
+    // reads the PNG's straight-alpha values, stays white. Straight alpha is what the blend
+    // function (SRC_ALPHA, ONE_MINUS_SRC_ALPHA) expects.
+    const atlasImage = await createImageBitmap(base64ToBlob(res.atlasDataUrl), {
+      premultiplyAlpha: 'none',
+      colorSpaceConversion: 'none',
+    });
 
     if (!state.view) state.view = new GpuView(els.gl);
     const stats = state.view.uploadMesh(res.meshArrayBuffer);

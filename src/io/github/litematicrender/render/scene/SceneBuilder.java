@@ -35,17 +35,35 @@ public final class SceneBuilder {
     };
 
     /**
-     * The lightmap factor for a face: the light level of the cell the face looks into, scaled to
-     * 0..1. Vanilla builds a 256-entry lightmap texture with a gamma curve and samples it; the
-     * linear scale here reaches the same endpoints (level 15 = full bright, level 0 = near black)
-     * and keeps the offline pipeline free of a texture round-trip.
+     * The lightmap factor for a face: the light level of the cell the face looks into, passed
+     * through the game's brightness curve.
+     *
+     * <p>Vanilla {@code Lightmap.getBrightness}: {@code v = level/15}, {@code curved = v/(4-3v)},
+     * then lerped from the dimension's ambient light (0.0 for the overworld) toward 1. The curve is
+     * what makes a torch-lit room feel warm and a cave mouth read as twilight; a straight
+     * level/15 ramp puts far too much light in the low levels — level 4 is 0.235 under the curve
+     * against 0.267 linear, and the difference compounds over AO.
+     *
+     * <p>Daylight enters through the sky channel: the light volume seeds 15 on every exposed column
+     * and the curve maps that to 1.0, which is the overworld at noon. A shaded read of the sky
+     * factor (0.8) is what the game uses indoors under a roof — the volume reproduces that for free,
+     * since a covered cell's sky level drops as the spread runs.
      */
     private float faceLightScale(int x, int y, int z, int face) {
         if (this.light == null) return 1f;
         int[] d = FACE_DELTAS[face];
         int level = this.light.faceLight(x - this.lightOrigin[0], y - this.lightOrigin[1],
             z - this.lightOrigin[2], d[0], d[1], d[2]);
-        return 0.05f + 0.95f * (level / 15f);
+        return brightnessCurve(level);
+    }
+
+    /**
+     * Vanilla {@code Lightmap.getBrightness} for the overworld: {@code v/(4-3v)} with no ambient
+     * floor. Exposed to a table so the curve can be checked without a render.
+     */
+    public static float brightnessCurve(int level) {
+        float v = Math.max(0, Math.min(15, level)) / 15f;
+        return v / (4f - 3f * v);
     }
 
     private final BlockRegistry registry;
@@ -873,14 +891,15 @@ public final class SceneBuilder {
 
     /**
      * The lightmap factor for a fluid face: the water surface reads the light of the cell it faces,
-     * which for the top face is the cell above the water.
+     * which for the top face is the cell above the water. Same curve as every other face — vanilla
+     * routes fluid lighting through the same lightmap texture.
      */
     private float fluidLightScale(int x, int y, int z, int face) {
         if (this.light == null) return 1f;
         int[] d = FACE_DELTAS[face];
         int level = this.light.faceLight(x - this.lightOrigin[0], y - this.lightOrigin[1],
             z - this.lightOrigin[2], d[0], d[1], d[2]);
-        return 0.05f + 0.95f * (level / 15f);
+        return brightnessCurve(level);
     }
 
     private static String fluidKey(BlockState s) {
