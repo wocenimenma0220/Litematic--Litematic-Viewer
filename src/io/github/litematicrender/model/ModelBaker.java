@@ -587,13 +587,16 @@ public final class ModelBaker {
             this.xRot = x;
             this.yRot = y;
             this.zRot = z;
-            // Column i is where basis vector i lands, in world space. Vanilla applies the rotations
-            // to the model in the order x, then y, then z (OctahedralGroup.compose reads x-first),
-            // so the combined matrix that a column vector meets is Z * Y * X.
+            // Column i is where basis vector i lands, in world space. Vanilla composes the variant
+            // angles as Z∘Y∘X (Quadrant.fromXYZAngles: y.rotationY.compose(x.rotationX)), meaning X
+            // acts on the model FIRST. Building the product in that order — X, then Y, then Z — is
+            // what the sequence below does; composing in the reverse order still gets every
+            // single-axis variant right while silently mirroring every combined one, which is how
+            // bottom stairs stayed correct while top stairs and sideways barrels flipped.
             double[][] m = identity();
-            m = composeZ(m, norm(z));
-            m = composeY(m, norm(y));
             m = composeX(m, norm(x));
+            m = composeY(m, norm(y));
+            m = composeZ(m, norm(z));
             this.mat[0] = m[0];
             this.mat[1] = m[1];
             this.mat[2] = m[2];
