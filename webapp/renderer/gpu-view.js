@@ -180,7 +180,7 @@ class GpuView {
       // a bucket are near each other, so the residual error is small.
       let layerEntry;
       if (ordinal >= 2) {
-        const BUCKETS = 8;
+        const BUCKETS = 32;
         const yLo = this._bucketScanY(data);
         const yHi = this._bucketScanY(data, true);
         const step = Math.max(1e-3, (yHi - yLo) / BUCKETS);
