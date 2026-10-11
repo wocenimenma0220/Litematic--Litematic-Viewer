@@ -780,8 +780,20 @@ public final class SceneBuilder {
         // written depth, which hid the water inside waterlogged leaves behind the leaf's own pixels.
         SceneMesh.MeshQuad mq = new SceneMesh.MeshQuad(xs, ys, zs,
             u0, v0, u1, v1, u2, v2, u3, v3,
-            sprite, 0xFFFFFFFF, tr, tg, tb, shade, null, SceneMesh.Layer.TRANSLUCENT);
+            sprite, 0xFFFFFFFF, null, tr, tg, tb, shade, null, SceneMesh.Layer.TRANSLUCENT, false);
         mesh.translucent.add(mq);
+        // Sodium's DefaultFluidRenderer writes every fluid face twice: once with its outward
+        // winding and once flipped, because a face culled from the inside lets you see straight
+        // through a pond to the geometry behind it — the "second water surface" ghosting. The
+        // flipped copy reverses the ring order (1<->3) so back-face culling stays on and the
+        // inward face is the one that shows when looking out of the water.
+        SceneMesh.MeshQuad back = new SceneMesh.MeshQuad(
+            new float[]{xs[0], xs[3], xs[2], xs[1]},
+            new float[]{ys[0], ys[3], ys[2], ys[1]},
+            new float[]{zs[0], zs[3], zs[2], zs[1]},
+            u0, v0, u3, v3, u2, v2, u1, v1,
+            sprite, 0xFFFFFFFF, null, tr, tg, tb, shade, null, SceneMesh.Layer.TRANSLUCENT, true);
+        mesh.translucent.add(back);
     }
 
     private static String fluidKey(BlockState s) {
