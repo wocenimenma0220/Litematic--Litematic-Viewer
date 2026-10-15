@@ -19,8 +19,8 @@ async function clearRenderingCache(home) {
       else if (!inside(await fs.realpath(target))) throw new Error('缓存文件位于软件目录之外，未清理：' + target);
     }
   }
-  for (const name of ['scenes', 'previews']) {
-    const directory = path.resolve(base, 'cache', name);
+  for (const parts of [['cache','scenes'], ['cache','previews'], ['renders','.gpu']]) {
+    const directory = path.resolve(base, ...parts);
     if (!inside(directory)) throw new Error('无效缓存清理路径');
     try {
       const stat = await fs.lstat(directory);

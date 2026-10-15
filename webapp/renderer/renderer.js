@@ -150,9 +150,9 @@ function updateButtons() {
   els.export.disabled = !ready;
   els.menuExportPng.disabled = !ready;
   els.menuExportGif.disabled = !ready;
-  els.skinOnline.disabled = busy;
-  els.skinImport.disabled = busy;
-  els.skinPlayer.disabled = busy;
+  els.skinOnline.disabled = busy||state.scenePreparing;
+  els.skinImport.disabled = busy||state.scenePreparing;
+  els.skinPlayer.disabled = busy||state.scenePreparing;
   els.realLighting.disabled = busy || !els.lightingEnabled.checked;
   els.lightingEnabled.disabled = busy;
   els.largeProjection.disabled=busy||state.previewBackend==='cpu';
@@ -163,8 +163,8 @@ function updateButtons() {
   els.preload.disabled=els.preloadMode.disabled||!state.viewReady||state.scenePreparing||state.preloadMode==='streaming';
   els.viewDistance.disabled=els.viewDistanceNumber.disabled=busy||state.previewBackend==='cpu';
   els.flyBtn.disabled = state.rendering || !state.viewReady || state.cpuPreview;
-  els.menuImportPack.disabled = busy;
-  $('sceneCacheLimit').disabled=$('sceneCacheClear').disabled=busy;
+  els.menuImportPack.disabled = busy||state.scenePreparing;
+  $('sceneCacheLimit').disabled=$('sceneCacheClear').disabled=busy||state.scenePreparing;
   updatePackButtons();
 }
 
@@ -340,6 +340,7 @@ async function buildView(options = {}) {
           const bitmap=await createImageBitmap(base64ToBlob(detail.atlasDataUrl),{premultiplyAlpha:'none',colorSpaceConversion:'none'});
           if(generation!==gpuBuildGeneration){bitmap.close();return;}
           state.view.uploadAtlas(bitmap);bitmap.close();state.view.stream.beginProgressive(detail.meshTransfer.id,detail.sections);
+          if(detail.skins){const s=detail.skins;els.skinInfo.textContent=`皮肤：缓存 ${s.cached} · 新下载 ${s.downloaded} · 本地 ${s.local} · 默认 ${s.fallback}`;}
           state.livePreview=true;state.overview=false;live=true;drawView();
           log('开始逐块补充完整细节，保留尚未替换的总览。');
         }
@@ -350,7 +351,7 @@ async function buildView(options = {}) {
           if(status.hasFull&&sequence===status.total){
             const result=await window.engine.previewComplete(job.id);if(generation!==gpuBuildGeneration)return;
             state.view.stream.finishProgressive(result);
-            els.stats.textContent=`${result.quads.toLocaleString()} 面 · ${(result.meshBytes/1048576).toFixed(1)} MB · 完整模型已生成`;
+            els.stats.textContent=`${result.quads.toLocaleString()} 面 · ${(result.meshBytes/1048576).toFixed(1)} MB · 完整模型已生成`+(result.entities?.saved?` · 实体 ${result.entities.rendered}`:'');
             log(`完整模型已生成：${result.quads.toLocaleString()} 面，准备 ${result.exportMillis} ms；保留已载入区块，继续补充当前视角。`,'ok');
             window.engine.previewDiagnostic(`detail generation complete: ${result.quads} faces, ${result.exportMillis} ms; GPU residents retained`).catch(()=>{});
             drawView();return;
@@ -1309,7 +1310,7 @@ async function saveGeometryBudget() {
 function updatePreloadInfo(stats=state.view?.stream?.stats()) {
   const job=stats?.preload;
   const labels={running:'后台预渲染',complete:'预渲染就绪',paused:'预渲染已暂停',limited:'缓存上限已到，可提高上限后继续',error:'预渲染中断，请查看日志后重试'};
-  els.preloadInfo.textContent=job?`${labels[job.status]||'预渲染'} · ${job.prepared} / ${job.total} 区块`:'随视角按需加载，缓存中的细节可重复使用。';
+  els.preloadInfo.textContent=job?`${labels[job.status]||'预渲染'} · ${job.prepared} / ${job.total} 区块`:state.scenePreparing?'完整区块正在生成，已生成部分会随视角载入。':'随视角按需加载，缓存中的细节可重复使用。';
   els.preload.textContent=job?.status==='running'?'暂停预渲染':job?.status==='limited'||job?.status==='paused'?'继续预渲染':'开始预渲染';
 }
 function startPreload() {

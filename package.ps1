@@ -28,7 +28,7 @@ param(
     [ValidatePattern('^[\p{L}\p{N}_-]+$')]
     [string]$PackageName = '投影预览',
     [ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')]
-    [string]$Version = '1.0.17.6'
+    [string]$Version = '1.0.17.7'
 )
 
 $ErrorActionPreference = 'Stop'

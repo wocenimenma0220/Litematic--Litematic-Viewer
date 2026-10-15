@@ -31,6 +31,10 @@ public final class OverviewMesh implements StreamMeshExporter.Source {
                 cell.count++;cell.red+=rgb>>16&255;cell.green+=rgb>>8&255;cell.blue+=rgb&255;
                 bounds[0]=Math.min(bounds[0],wx);bounds[1]=Math.min(bounds[1],wy);bounds[2]=Math.min(bounds[2],wz);bounds[3]=Math.max(bounds[3],wx+1);bounds[4]=Math.max(bounds[4],wy+1);bounds[5]=Math.max(bounds[5],wz+1);
             });
+            for(var entity:r.entities)if(EntityGeometry.supported(entity)&&(!entity.data().getBooleanOrDefault("Invisible",false)||EntityGeometry.frame(entity))){
+                double[] at={r.position.x()+entity.x(),r.position.y()+entity.y(),r.position.z()+entity.z()};
+                for(int axis=0;axis<3;axis++){bounds[axis]=Math.min(bounds[axis],(float)(at[axis]-(axis==1?0:2)));bounds[axis+3]=Math.max(bounds[axis+3],(float)(at[axis]+(axis==1?3:2)));}
+            }
         }
         for(var cell:cells.values()){
             cell.color=(int)(cell.red/cell.count)<<16|(int)(cell.green/cell.count)<<8|(int)(cell.blue/cell.count);var p=cell.position;

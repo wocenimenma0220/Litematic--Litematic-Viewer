@@ -41,6 +41,7 @@ target.write_text('\n'.join(reconstructed) + '\n', encoding='utf-8')
 paths = [p.relative_to(baseline).as_posix() for p in baseline.rglob('*') if p.is_file() and p.name not in {'before.diff', 'status.txt'}]
 paths += ['src/io/github/litematicrender/serve/PreviewPriority.java',
           'tools/verify/ProgressiveFixture.java', 'tools/verify/ProgressiveWriterRegression.java',
+          'tools/verify/ProgressiveRenderFixture.java', 'tools/verify/progressive-pixels-ui.cjs',
           'tools/verify/progressive-transfer-regression.cjs', 'tools/verify/progressive-sections-ui.cjs',
           'tools/verify/capture-progressive-diff.py']
 parts = []

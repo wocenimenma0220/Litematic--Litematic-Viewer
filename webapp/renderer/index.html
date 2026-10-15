@@ -71,13 +71,13 @@
         </div>
         <p class="muted small" id="previewBackendInfo">GPU 支持实时旋转、缩放和漫游。</p>
         <label class="check"><input id="largeProjection" type="checkbox" />大投影渲染</label>
-        <p class="muted small">开启后先显示简化总览，再补齐完整材质；再次打开可复用磁盘缓存。</p>
+        <p class="muted small">开启后先显示简化总览，再按视角逐块补充完整细节；已载入部分会保留。</p>
         <label class="check"><input id="lodPreview" type="checkbox" checked />按距离调整细节（LOD）</label>
         <p class="muted small">大投影渲染开启时，近处保留完整细节；关闭 LOD 后区块始终使用完整精度。PNG / GIF 始终保持完整精度。</p>
         <p class="muted small" id="streamInfo"></p>
         <p class="muted small" id="pageReadInfo"></p>
         <div class="field">
-          <label for="preloadMode">模型准备方式</label>
+          <label for="preloadMode">细节加载方式</label>
           <select id="preloadMode">
             <option value="distance">当前视距预渲染</option>
             <option value="full">完整投影预渲染</option>
@@ -86,7 +86,7 @@
         </div>
         <button id="btnPreload" type="button" disabled>开始预渲染</button>
         <p class="muted small" id="preloadInfo">随视角按需加载，缓存中的细节可重复使用。</p>
-        <p class="muted small">预渲染在后台准备完整细节，预览可同时操作。漫游时以相机为中心，轨道总览以投影中心为准。缓存不足会暂停，可提高上限后继续。</p>
+        <p class="muted small">控制已生成细节的提前加载范围。完整区块按视角优先生成，其余继续后台补齐；预览可同时操作。缓存不足会暂停，可提高上限后继续。</p>
         <div class="field">
           <label for="geometryBudget">预览几何缓存上限（MB）</label>
           <input id="geometryBudget" type="number" min="32" max="16384" step="1" value="256" />

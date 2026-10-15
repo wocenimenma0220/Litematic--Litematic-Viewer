@@ -12,7 +12,7 @@ app.once('browser-window-created',(_event,win)=>{win.webContents.setBackgroundTh
  try{
   const result=await win.webContents.executeJavaScript(`(async()=>{
    const wait=ms=>new Promise(r=>setTimeout(r,ms)),check=(v,m)=>{if(!v)throw Error(m+' '+els.log.textContent);};await window.__uiReady;if(els.welcome.open)await dismissWelcome(false);await window.engine.loadResources(null);
-   state.largeProjection=true;els.largeProjection.checked=true;state.lodPreview=${large};els.lodPreview.checked=${large};state.geometryBudgetMB=${large?256:64};els.geometryBudget.value=String(state.geometryBudgetMB);els.lightingEnabled.checked=true;els.realLighting.checked=true;
+   state.largeProjection=true;els.largeProjection.checked=true;state.lodPreview=${large};els.lodPreview.checked=${large};state.preloadMode='streaming';els.preloadMode.value='streaming';state.geometryBudgetMB=${large?256:64};els.geometryBudget.value=String(state.geometryBudgetMB);els.lightingEnabled.checked=true;els.realLighting.checked=true;
    await window.engine.configureSceneCache({limitMB:4096,clear:true});
    const start=performance.now(),loading=loadFile(${JSON.stringify(large?'D:/litematic-display/璃月港.litematic':path.join(__dirname,'progressive-output/checker.litematic'))});let overview=null,stream=null,firstDetail=null,firstStats=null,toggled=false;const deadline=Date.now()+240000;
    while(state.rendering||state.scenePreparing||!state.viewReady){
@@ -20,20 +20,24 @@ app.once('browser-window-created',(_event,win)=>{win.webContents.setBackgroundTh
     if(state.overview&&state.viewReady&&!overview){overview=performance.now()-start;stream=state.view.stream;}
     const stats=state.view?.stream?.stats();
     if(stats?.progressive&&stats.detailResidents&&firstDetail===null){firstDetail=performance.now()-start;firstStats=stats;check(state.scenePreparing,'first detail arrived after whole build');check(state.view.stream===stream,'overview stream was discarded');check(stats.publishedSections<stats.totalExpected,'all sections completed before first detail');}
+    if(state.scenePreparing&&state.viewReady)check($('sceneCacheClear').disabled&&els.skinImport.disabled&&els.menuImportPack.disabled,'blocking engine controls remained enabled during publication');
     if(firstDetail!==null&&!toggled){const generation=gpuBuildGeneration,job=state.previewJobId;els.lodPreview.click();await wait(150);check(gpuBuildGeneration===generation&&state.previewJobId===job&&state.view.stream===stream,'LOD toggle restarted generation');els.lodPreview.click();await wait(150);toggled=true;}
     await wait(20);
    }
    await loading;check(firstDetail!==null,'no early detail appeared');check(state.view.stream===stream,'completion replaced GPU stream');check(stream.progressComplete,'final progressive metadata missing');await stream.settled();drawView();
    const complete=performance.now()-start,stats=stream.stats();check(stats.peakBytes<=stats.budgetBytes,'GPU budget exceeded');check(state.view.gl.getError()===0,'WebGL error');
+   if(!${large})check(stats.lodCounts[1]===0&&stats.lodCounts[2]===0,'LOD disabled silently selected middle detail');
    const old=state.view.stream,begin=gpuBuildGeneration;els.lodPreview.click();await wait(200);els.lodPreview.click();await wait(200);check(state.view.stream===old&&gpuBuildGeneration===begin,'idle LOD toggle rebuilt stream');
    const warmStart=performance.now();await buildView({preserveCamera:true});await state.view.stream.settled();drawView();const warmMillis=performance.now()-warmStart;check(els.log.textContent.includes('已复用磁盘场景缓存'),'completed progressive cache could not be reopened');
    if(!${large}){
     const replacing=buildView({force:true,preserveCamera:true}),cancelDeadline=Date.now()+15000;
     while(!state.livePreview||!(state.view?.stream?.detailCount>0)){if(Date.now()>cancelDeadline)throw Error('cancel test never reached partial publication');await wait(20);}
     check(state.view.stream.detailCount<state.view.stream.totalExpected,'cancel test finished before replacement');
+    els.preloadMode.value='full';els.preloadMode.dispatchEvent(new Event('change'));await wait(50);check(!state.view.stream.preloadJob,'preload started while full catalog was incomplete');
     await loadFile(${JSON.stringify(path.join(__dirname,'feature-output/lod-current/small.litematic'))});await replacing;
    }else await loadFile(${JSON.stringify(path.join(__dirname,'feature-output/lod-current/small.litematic'))});
    await state.view.stream.settled();drawView();check(state.viewReady&&!state.scenePreparing,'replacement small scene failed');
+   if(!${large}){const preloadDeadline=Date.now()+10000;while(state.view.stream.preloadJob?.status!=='complete'){if(Date.now()>preloadDeadline)throw Error('preload did not start after model completed');await wait(20);}}
    check((await window.engine.sceneCacheStats()).temporaryBytes===0,'cancelled work bundle was not discarded');
    return {pass:true,overview,firstDetail,complete,warmMillis,firstStats,stats,log:els.log.textContent};
   })()`);

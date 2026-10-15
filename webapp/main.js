@@ -225,6 +225,7 @@ ipcMain.handle('engine:exportScene', async (event, options = {}) => {
   await fs.promises.mkdir(dir, { recursive: true });
   await sceneTransfer.close();
   diagnostic('building preview scene');
+  await engine.call('cancelPreview',{});
   const res = await engine.call(options.streaming===true?'exportCachedScene':'exportScene', {
     atlas: path.join(dir, 'atlas.png'),
     mesh: path.join(dir, 'mesh.bin'),

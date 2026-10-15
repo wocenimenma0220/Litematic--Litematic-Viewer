@@ -194,6 +194,7 @@ class LodStream {
     }
     else for(const task of candidates){if(cam.lodEnabled===false&&task.section.fullReady!==false){task.level=task.desired=0;task.cost=task.section.costs[0];}if(used+task.cost<=capacity&&!this.failed.has(task.section.id+':'+task.level)){targets.set(task.section.id,task);used+=task.cost;}}
     for(const task of candidates)if((this.hasOverview||this.progressive||cam.lodEnabled!==false)&&targets.has(task.section.id))for(let level=task.desired;level<3;level++) {
+      if(cam.lodEnabled===false&&level>0)break;
       const cost=task.section.costs[level],extra=this.keepOverview?cost:cost-task.cost;
       if(used+extra<=capacity&&!this.failed.has(task.section.id+':'+level)){used+=extra;task.cost=cost;task.level=level;break;}
     }
