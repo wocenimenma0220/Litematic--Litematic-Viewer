@@ -26,7 +26,16 @@ app.once('browser-window-created',(_event,win)=>{win.webContents.setBackgroundTh
    await loading;check(firstDetail!==null,'no early detail appeared');check(state.view.stream===stream,'completion replaced GPU stream');check(stream.progressComplete,'final progressive metadata missing');await stream.settled();drawView();
    const complete=performance.now()-start,stats=stream.stats();check(stats.peakBytes<=stats.budgetBytes,'GPU budget exceeded');check(state.view.gl.getError()===0,'WebGL error');
    const old=state.view.stream,begin=gpuBuildGeneration;els.lodPreview.click();await wait(200);els.lodPreview.click();await wait(200);check(state.view.stream===old&&gpuBuildGeneration===begin,'idle LOD toggle rebuilt stream');
-   return {pass:true,overview,firstDetail,complete,firstStats,stats,log:els.log.textContent};
+   const warmStart=performance.now();await buildView({preserveCamera:true});await state.view.stream.settled();drawView();const warmMillis=performance.now()-warmStart;check(els.log.textContent.includes('已复用磁盘场景缓存'),'completed progressive cache could not be reopened');
+   if(!${large}){
+    const replacing=buildView({force:true,preserveCamera:true}),cancelDeadline=Date.now()+15000;
+    while(!state.livePreview||!(state.view?.stream?.detailCount>0)){if(Date.now()>cancelDeadline)throw Error('cancel test never reached partial publication');await wait(20);}
+    check(state.view.stream.detailCount<state.view.stream.totalExpected,'cancel test finished before replacement');
+    await loadFile(${JSON.stringify(path.join(__dirname,'feature-output/lod-current/small.litematic'))});await replacing;
+   }else await loadFile(${JSON.stringify(path.join(__dirname,'feature-output/lod-current/small.litematic'))});
+   await state.view.stream.settled();drawView();check(state.viewReady&&!state.scenePreparing,'replacement small scene failed');
+   check((await window.engine.sceneCacheStats()).temporaryBytes===0,'cancelled work bundle was not discarded');
+   return {pass:true,overview,firstDetail,complete,warmMillis,firstStats,stats,log:els.log.textContent};
   })()`);
   fs.writeFileSync(path.join(out,'preview.png'),(await win.webContents.capturePage()).toPNG());fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({...result,calls},null,2));console.log(JSON.stringify({...result,log:undefined,calls:undefined}));clearInterval(interval);win.close();
  }catch(error){failed=true;clearInterval(interval);const debug=await win.webContents.executeJavaScript('({status:els.status.textContent,log:els.log.textContent,stats:state.view?.stream?.stats()})').catch(()=>null);fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({pass:false,error:error.stack,debug,calls},null,2));console.error(error.stack,debug);app.quit();}

@@ -58,6 +58,7 @@ class LodStream {
     this.residents=new Map();this.wanted=new Map();this.failed=new Set();this.disposed=false;this.lastPlan=-Infinity;this.loads=0;this.evictions=0;this.lodChanges=0;
     this.fallbacks=new Map();this.cache=new Map();this.cacheHits=0;this.preloadSequence=0;this.queue=[];this.queueAt=0;this.lodCounts=[0,0,0,0];
     this.positions=new Map(manifest.sections.map(section=>[section.position.join(','),section]));this.detailCount=0;
+    this.hasOverview=options.overview===true||options.coarseOverview===true;
     for(const section of manifest.sections){section.fullReady=options.overview!==true;for(let level=0;level<4;level++)for(const page of section.levels[level])page.proxy=options.overview===true||options.coarseOverview===true&&level===3;}
     this.updateCapacity();
     this.overviewBytes=manifest.sections.reduce((n,s)=>n+s.costs[3],0);
@@ -173,7 +174,7 @@ class LodStream {
     const orbitPixels=cam.orbit?16*view.fitOrtho(cam.rotationDeg||0,cam.slantDeg||0,width,height,cam.zoom||1).scale:0;
     const range=this.manifest.sections.filter(section=>inRenderDistance(section,cam));
     this.overviewBytes=range.reduce((n,s)=>n+s.costs[3],0);this.rangeSections=range.length;
-    this.keepOverview=(this.progressive||cam.lodEnabled!==false)&&this.overviewBytes<=(this.capacity-this.swapReserve)*.6;
+    this.keepOverview=(this.hasOverview||this.progressive||cam.lodEnabled!==false)&&this.overviewBytes<=(this.capacity-this.swapReserve)*.6;
     if(!this.keepOverview&&this.fallbacks.size){for(const fallback of this.fallbacks.values())this.drop(fallback);this.fallbacks.clear();this.changed();}
     for(const section of range)if(this.visible(section,planes,cam)) {
       const distance=Math.hypot(...section.center.map((v,i)=>v-eye[i]));
@@ -192,7 +193,7 @@ class LodStream {
       for(const section of range)if(!targets.has(section.id)){const task={section,desired:3,level:3,priority:Infinity,cost:section.costs[3]};targets.set(section.id,task);used+=task.cost;}
     }
     else for(const task of candidates){if(cam.lodEnabled===false&&task.section.fullReady!==false){task.level=task.desired=0;task.cost=task.section.costs[0];}if(used+task.cost<=capacity&&!this.failed.has(task.section.id+':'+task.level)){targets.set(task.section.id,task);used+=task.cost;}}
-    for(const task of candidates)if((this.progressive||cam.lodEnabled!==false)&&targets.has(task.section.id))for(let level=task.desired;level<3;level++) {
+    for(const task of candidates)if((this.hasOverview||this.progressive||cam.lodEnabled!==false)&&targets.has(task.section.id))for(let level=task.desired;level<3;level++) {
       const cost=task.section.costs[level],extra=this.keepOverview?cost:cost-task.cost;
       if(used+extra<=capacity&&!this.failed.has(task.section.id+':'+level)){used+=extra;task.cost=cost;task.level=level;break;}
     }

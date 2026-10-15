@@ -389,7 +389,7 @@ async function buildView(options = {}) {
     state.cpuPreview=true;state.cpuPreviewReady=false;updatePreviewBackend();
     await requestPreview(false);
   } finally {
-    if(generation===gpuBuildGeneration){state.scenePreparing=false;setBusy(false);state.previewJobId=null;updateProgressiveStatus(state.view?.stream?.stats());if(state.view?.stream?.progressComplete)refreshSceneCacheInfo().catch(()=>{});}
+    if(generation===gpuBuildGeneration){state.scenePreparing=false;setBusy(false);state.previewJobId=null;updateProgressiveStatus(state.view?.stream?.stats());if(state.view?.stream?.progressComplete)refreshSceneCacheInfo().catch(()=>{});if(state.view?.stream&&state.viewReady&&!state.overview&&state.preloadMode!=='streaming')startPreload();}
   }
 }
 
