@@ -103,12 +103,7 @@ public final class CliRenderer {
     }
 
     /**
-     * Renders an animation: the same scene at successive ticks, written as an animated GIF.
-     *
-     * <p>Only animated textures change between frames (geometry, camera and lighting are identical),
-     * so every frame is a full re-render of the atlas contents against one already-built mesh.
-     *
-     * @param ticks maximum frames; used texture cycles are combined when they fit in this limit
+     * Renders one full camera revolution while advancing animated texture ticks.
      */
     public static void renderAnimation(Path schemFile, Path vanillaRoot, Path outGif,
                                        RenderSettings settings, int ticks, int delayCs,
@@ -126,20 +121,15 @@ public final class CliRenderer {
             SpriteAtlas atlas = SpriteAtlas.load(resources, "blocks");
             ModelBaker baker = new ModelBaker(resources, registry);
 
-            // A pack has animations of wildly different periods (water 64 ticks, prismarine 6000),
-            // so a GIF can't loop all of them. Animate over the shortest period that actually moves,
-            // which is what a viewer perceives as motion; sampling consecutive ticks of a 6000-tick
-            // cycle would look frozen.
             var mesh=SchematicRenderer.buildScene(schem,baker,registry,colormaps,atlas,settings.realLighting,settings.lightingEnabled);
-            var cycle=atlas.animationCycle(mesh,ticks);
-            int frameCount=cycle.frames();
+            int frameCount=Math.max(2,Math.min(360,ticks));
             if (verbose) {
-                System.out.println("scene animation: " + frameCount + " frames, complete cycle="+cycle.complete());
+                System.out.println("rotating animation: " + frameCount + " frames");
             }
 
             long t0 = System.currentTimeMillis();
             GifWriter.writeFrames(outGif,frameCount,delayCs,i -> {
-                RenderSettings s = new RenderSettings(settings.rotationDeg, settings.slantDeg,
+                RenderSettings s = new RenderSettings(settings.rotationDeg+i*360f/frameCount, settings.slantDeg,
                     settings.width, settings.height);
                 s.transparentBackground = settings.transparentBackground;
                 s.backgroundColor = settings.backgroundColor;

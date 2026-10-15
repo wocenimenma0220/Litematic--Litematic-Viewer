@@ -16,13 +16,13 @@ class SceneTransfer {
     if(this.decoding)throw new Error('页面读取队列已满');
     const {offset,bytes,rawBytes,codec,checksum}=page||{};
     if(![offset,bytes,rawBytes,codec,checksum].every(Number.isSafeInteger)||bytes<1||rawBytes<1||rawBytes>RAW_PAGE_LIMIT
-      ||!(codec===0&&bytes===rawBytes||codec===1&&bytes<rawBytes)||checksum<0||checksum>0xffffffff)throw new Error('无效的压缩页');
+      ||codec<0||codec>3||!((codec&1)===0&&bytes===rawBytes||(codec&1)===1&&bytes<rawBytes)||checksum<0||checksum>0xffffffff)throw new Error('无效的压缩页');
     this.decoding=true;
     try {
       const scratch=bytes+rawBytes*3+1024*1024;if(scratch>TRANSFER_SCRATCH_LIMIT)throw new Error('页面读取超过临时空间预算');
       this.peakScratchBytes=Math.max(this.peakScratchBytes,scratch);const wire=Buffer.allocUnsafeSlow(bytes);
       for(let at=0;at<bytes;at+=CHUNK_LIMIT){const n=Math.min(CHUNK_LIMIT,bytes-at);wire.set(new Uint8Array(await this.read(owner,id,offset+at,n)),at);}
-      const started=performance.now(),raw=codec===1?inflateSync(wire,{maxOutputLength:rawBytes}):wire;
+      const started=performance.now(),raw=(codec&1)===1?inflateSync(wire,{maxOutputLength:rawBytes}):wire;
       if(raw.length!==rawBytes||crc32(raw)!==checksum)throw new Error('模型页校验失败，请重新渲染');
       if(this.scenes.get(id)?.owner!==owner)throw new Error('模型已更新，请重新加载预览。');
       return {data:raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength),storedBytes:bytes,decodedBytes:rawBytes,decodeMillis:performance.now()-started,scratchLimitBytes:TRANSFER_SCRATCH_LIMIT,peakScratchBytes:this.peakScratchBytes,cpuCacheBytes:0};

@@ -172,6 +172,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     private boolean prepared,streaming,registeringSprites;
     public SceneBuilder skinSnapshot(io.github.litematicrender.render.skin.SkinResolver snapshot){if(prepared)throw new IllegalStateException("Scene already prepared");this.skins=snapshot;return this;}
     private SectionVisibility.Position range;
+    private int rangeSize=16;
     private final java.util.List<java.util.Map<SectionVisibility.Position,java.util.List<Integer>>> entitySections=new java.util.ArrayList<>();
     private void prepare() {
         if(prepared)return;
@@ -195,6 +196,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     private static SectionVisibility.Position section(double x,double y,double z) {
         return new SectionVisibility.Position((int)Math.floor(x/16),(int)Math.floor(y/16),(int)Math.floor(z/16));
     }
+    @Override public int buildUnitSections(){return Integer.getInteger("litematicrender.mesh.buildUnit",16)>=32?2:1;}
     /** Occupied ownership sections, without materializing any face arrays. */
     public java.util.List<SectionVisibility.Position> sections() {
         var keys=new java.util.TreeSet<SectionVisibility.Position>(java.util.Comparator.comparingInt(SectionVisibility.Position::x).thenComparingInt(SectionVisibility.Position::y).thenComparingInt(SectionVisibility.Position::z));
@@ -228,20 +230,36 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     }
     public SceneMesh buildSection(SectionVisibility.Position key) {
         if(Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException("模型生成已取消");
-        prepare();range=key;
+        prepare();range=key;rangeSize=16;
         if(light!=null){sectionLight=light.forSection(key.x()*16-lightOrigin[0],key.y()*16-lightOrigin[1],key.z()*16-lightOrigin[2]);if(smoothLighting!=null)smoothLighting.bind(sectionLight);}
         lightCacheReady=false;
-        try{return assemble();}finally{range=null;sectionLight=null;if(smoothLighting!=null)smoothLighting.bind(light);}
+        try{return assemble();}finally{range=null;rangeSize=16;sectionLight=null;if(smoothLighting!=null)smoothLighting.bind(light);}
+    }
+    @Override public java.util.Map<SectionVisibility.Position,SceneMesh> buildSections(java.util.List<SectionVisibility.Position> positions) {
+        if(positions.size()<2||buildUnitSections()<2)return io.github.litematicrender.render.StreamMeshExporter.Source.super.buildSections(positions);
+        int bx=Math.floorDiv(positions.getFirst().x(),2)*2,by=Math.floorDiv(positions.getFirst().y(),2)*2,bz=Math.floorDiv(positions.getFirst().z(),2)*2;
+        for(var p:positions)if(Math.floorDiv(p.x(),2)*2!=bx||Math.floorDiv(p.y(),2)*2!=by||Math.floorDiv(p.z(),2)*2!=bz)throw new IllegalArgumentException("32 格构建批次跨越边界");
+        prepare();range=new SectionVisibility.Position(bx,by,bz);rangeSize=32;sectionLight=null;lightCacheReady=false;if(smoothLighting!=null)smoothLighting.bind(light);
+        try {
+            SceneMesh combined=assemble(false);combined.visibility.compile();
+            var result=new java.util.LinkedHashMap<SectionVisibility.Position,SceneMesh>();for(var p:positions){var mesh=new SceneMesh();mesh.visibility=combined.visibility;mesh.skinReport=combined.skinReport;result.put(p,mesh);}
+            partition(combined.solid,result);partition(combined.cutout,result);partition(combined.portal,result);partition(combined.fluid,result);partition(combined.translucent,result);partition(combined.waterMask,result);
+            boolean report=true;for(var mesh:result.values()){mesh.entityReport=report?combined.entityReport:java.util.Map.of();report=false;finish(mesh,false);}
+            return result;
+        } finally {range=null;rangeSize=16;sectionLight=null;if(smoothLighting!=null)smoothLighting.bind(light);}
+    }
+    private static void partition(java.util.List<SceneMesh.MeshQuad> source,java.util.Map<SectionVisibility.Position,SceneMesh> targets) {
+        for(var quad:source){var key=new SectionVisibility.Position(Math.floorDiv(quad.blockX,16),Math.floorDiv(quad.blockY,16),Math.floorDiv(quad.blockZ,16));var mesh=targets.get(key);if(mesh==null)throw new IllegalStateException("几何所有权超出 32 格构建批次："+key);switch(quad.layer){case SOLID->mesh.solid.add(quad);case CUTOUT->mesh.cutout.add(quad);case PORTAL->mesh.portal.add(quad);case FLUID->mesh.fluid.add(quad);case TRANSLUCENT->mesh.translucent.add(quad);case WATER_MASK->mesh.waterMask.add(quad);}}
     }
     public SceneMesh build() {prepare();range=null;return assemble();}
     private void forEachBlock(LitematicaSchematic.Region region,int[] off,LitematicaSchematic.BlockContainer.NonAirConsumer consumer) {
         if(range==null){region.blocks.forEachNonAir(consumer);return;}
         int x0=Math.max(0,range.x()*16-off[0]),y0=Math.max(0,range.y()*16-off[1]),z0=Math.max(0,range.z()*16-off[2]);
-        int x1=Math.min(region.blocks.sizeX,x0+16),y1=Math.min(region.blocks.sizeY,y0+16),z1=Math.min(region.blocks.sizeZ,z0+16);
-        x1=Math.min(x1,(range.x()+1)*16-off[0]);y1=Math.min(y1,(range.y()+1)*16-off[1]);z1=Math.min(z1,(range.z()+1)*16-off[2]);
+        int x1=Math.min(region.blocks.sizeX,range.x()*16+rangeSize-off[0]),y1=Math.min(region.blocks.sizeY,range.y()*16+rangeSize-off[1]),z1=Math.min(region.blocks.sizeZ,range.z()*16+rangeSize-off[2]);
         for(int y=y0;y<y1;y++)for(int z=z0;z<z1;z++)for(int x=x0;x<x1;x++){var state=region.blocks.get(x,y,z);if(!state.isAir())consumer.accept(x,y,z,state);}
     }
-    private SceneMesh assemble() {
+    private SceneMesh assemble() {return assemble(true);}
+    private SceneMesh assemble(boolean finishGeometry) {
         SceneMesh mesh = new SceneMesh();
         mesh.visibility=new SectionVisibility();
         var entityGeometry=new EntityGeometry(this.baker,this.registry,this.generatedSprites).lightingEnabled(lightingEnabled);
@@ -259,7 +277,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
             // Blocks whose appearance comes from a renderer rather than a model contribute nothing
             // above, so heads and sign text are emitted separately.
             this.emitBlockEntities(mesh, region, off, entityGeometry);
-            var indices=range==null?null:entitySections.get(ri).getOrDefault(range,java.util.List.of());
+            java.util.List<Integer> indices=null;if(range!=null){indices=new java.util.ArrayList<>();for(var entry:entitySections.get(ri).entrySet()){var p=entry.getKey();if(p.x()>=range.x()&&p.y()>=range.y()&&p.z()>=range.z()&&p.x()*16<range.x()*16+rangeSize&&p.y()*16<range.y()*16+rangeSize&&p.z()*16<range.z()*16+rangeSize)indices.addAll(entry.getValue());}}
             for(int ei=0;ei<(indices==null?region.entities.size():indices.size());ei++) {
                 int index=indices==null?ei:indices.get(ei);
                 var entity=region.entities.get(index);savedEntities++;
@@ -280,8 +298,8 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
                     var pose=MinecartPose.resolve(entity,x,y,z,this::blockAt);
                     entityGeometry.emit(mesh,entity,pose.x(),pose.y(),pose.z(),rgb,submerged,pose.yaw(),pose.pitch());
                 } else entityGeometry.emit(mesh,entity,x,y,z,rgb,submerged);
-                ownEntity(mesh.solid,solid,index);ownEntity(mesh.cutout,cutout,index);ownEntity(mesh.portal,portal,index);ownEntity(mesh.fluid,fluid,index);ownEntity(mesh.translucent,translucent,index);
-                ownEntity(mesh.waterMask,mask,index);
+                ownEntity(mesh.solid,solid,index,x,y,z);ownEntity(mesh.cutout,cutout,index,x,y,z);ownEntity(mesh.portal,portal,index,x,y,z);ownEntity(mesh.fluid,fluid,index,x,y,z);ownEntity(mesh.translucent,translucent,index,x,y,z);
+                ownEntity(mesh.waterMask,mask,index,x,y,z);
                 renderedEntities++;
             }
         }
@@ -289,6 +307,11 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
         if(!streaming)this.atlas.replaceGeneratedSprites(this.generatedSprites);
         mesh.skinReport = this.skins.summary();
         mesh.entityReport=java.util.Map.of("saved",savedEntities,"rendered",renderedEntities,"invisible",invisibleEntities,"unsupported",unsupportedEntities,"duplicates",duplicateEntities);
+        if(finishGeometry)finish(mesh);
+        return mesh;
+    }
+    private static void finish(SceneMesh mesh) { finish(mesh,true); }
+    private static void finish(SceneMesh mesh,boolean compileVisibility) {
         mesh.quadCount = mesh.solid.size() + mesh.cutout.size() + mesh.portal.size()
             + mesh.fluid.size() + mesh.translucent.size()+mesh.waterMask.size();
         // BSP resolves crossings itself. Only retain the old subdivision where bilinear
@@ -299,8 +322,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
         var blended=new java.util.ArrayList<SceneMesh.MeshQuad>(mesh.portalSorted);
         blended.addAll(mesh.fluidSorted);blended.addAll(mesh.translucentSorted);
         if(!blended.isEmpty())mesh.translucentBsp=TranslucentBsp.build(blended);
-        mesh.visibility.compile();
-        return mesh;
+        if(compileVisibility)mesh.visibility.compile();
     }
 
     // ------------------------------------------------------------------
@@ -481,7 +503,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     private void own(java.util.List<SceneMesh.MeshQuad> quads,int start,int x,int y,int z) {
         for(int i=start;i<quads.size();i++) quads.get(i).owner(x,y,z,this.currentRegionName);
     }
-    private void ownEntity(java.util.List<SceneMesh.MeshQuad> quads,int start,int index){for(int i=start;i<quads.size();i++)quads.get(i).entityOwner(index,this.currentRegionName);}
+    private void ownEntity(java.util.List<SceneMesh.MeshQuad> quads,int start,int index,double x,double y,double z){for(int i=start;i<quads.size();i++)quads.get(i).owner((int)Math.floor(x),(int)Math.floor(y),(int)Math.floor(z),this.currentRegionName).entityOwner(index,this.currentRegionName);}
 
     /**
      * Splits each quad into an n×n grid, so back-to-front ordering still holds where two

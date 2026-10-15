@@ -19,7 +19,7 @@ public final class LodLargeBenchmark {
             System.gc();Thread.sleep(250);
             report.put("heapUsedAfterGc",Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory());report.put("heapLimit",Runtime.getRuntime().maxMemory());
             report.put("elapsedMillis",System.currentTimeMillis()-begin);report.put("phase","complete");report.put("pass",true);write(out.resolve("result.json"),report);write(out.resolve("progress.json"),report);
-            System.out.println("PASS: large LMESH5 export; faces="+report.get("quads")+", sections="+report.get("sections")+", heap="+report.get("heapUsedAfterGc")+" / "+report.get("heapLimit"));
+            System.out.println("PASS: large LMESH7 export; faces="+report.get("quads")+", sections="+report.get("sections")+", heap="+report.get("heapUsedAfterGc")+" / "+report.get("heapLimit"));
         }catch(Throwable error){report.put("pass",false);report.put("error",error.toString());write(out.resolve("result.json"),report);throw error;}
     }
 }

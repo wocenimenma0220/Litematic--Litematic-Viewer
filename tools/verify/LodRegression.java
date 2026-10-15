@@ -34,6 +34,14 @@ public final class LodRegression {
     static SceneBuilder builder(LitematicaSchematic schematic,BlockRegistry registry,ModelBaker baker,Colormaps colors,SpriteAtlas atlas,boolean real) {
         var result=new SceneBuilder(registry,baker,colors,atlas).realLighting(real);for(var region:schematic.regions().values()){var origin=region.blockOrigin();result.addRegion(region,new int[]{origin.x(),origin.y(),origin.z()});}return result;
     }
+    static Map<SectionVisibility.Position,SceneMesh> build32(SceneBuilder builder) {
+        String previous=System.getProperty("litematicrender.mesh.buildUnit");System.setProperty("litematicrender.mesh.buildUnit","32");
+        try {
+            builder.prepareStreaming();var groups=new LinkedHashMap<String,List<SectionVisibility.Position>>();
+            for(var position:builder.sections()){String key=Math.floorDiv(position.x(),2)+","+Math.floorDiv(position.y(),2)+","+Math.floorDiv(position.z(),2);groups.computeIfAbsent(key,ignored->new ArrayList<>()).add(position);}
+            var result=new LinkedHashMap<SectionVisibility.Position,SceneMesh>();for(var group:groups.values())result.putAll(builder.buildSections(group));return result;
+        } finally {if(previous==null)System.clearProperty("litematicrender.mesh.buildUnit");else System.setProperty("litematicrender.mesh.buildUnit",previous);}
+    }
     static Set<String> geometry(SceneMesh mesh) {
         var keys=new HashSet<String>();for(var layer:List.of(mesh.solid,mesh.cutout))for(var q:layer)keys.add(q.spriteId+":"+q.x0+","+q.y0+","+q.z0+":"+q.x1+","+q.y1+","+q.z1+":"+q.x2+","+q.y2+","+q.z2+":"+q.x3+","+q.y3+","+q.z3+":"+Arrays.toString(q.vertexColors));
         return keys;
@@ -50,7 +58,11 @@ public final class LodRegression {
             Set<String> actual=new HashSet<>();for(var entry:index.sections())actual.addAll(geometry(generator.buildSection(entry.position())));
             check(geometry(full).equals(actual),"section boundaries lost or duplicated full-detail faces");
             check(index.sections().size()==2,"fixture did not cross a section boundary");
-            check(index.sections().stream().flatMap(e->e.levels().get(0).stream()).allMatch(p->p.layer()==6||p.rawBytes()==p.quads()*80),"compact vertex encoding mismatch");
+            var batchGenerator=builder(schematic,registry,baker,colors,atlas,true);Set<String> batched=new HashSet<>();for(var mesh:build32(batchGenerator).values())batched.addAll(geometry(mesh));
+            check(geometry(full).equals(batched),"32-cell build batch changed a 16-cell boundary");
+            var fullPages=index.sections().stream().flatMap(e->e.levels().get(0).stream()).filter(p->p.layer()!=6).toList();
+            check(fullPages.stream().anyMatch(StreamMeshExporter.Page::compact)&&fullPages.stream().anyMatch(p->!p.compact()),"compact unit faces or complex fallback were not emitted");
+            check(fullPages.stream().allMatch(p->p.rawBytes()==p.quads()*(p.compact()?40:80)),"compact/full page length mismatch");
             for(var entry:index.sections())for(int level=1;level<4;level++)for(var page:entry.levels().get(0))if(page.layer()==5||level==1&&page.layer()>=4)check(entry.levels().get(level).contains(page),"near blended geometry or boat masks changed across LODs");
             var smooth=full.solid.stream().filter(q->q.vertexColors!=null&&Arrays.stream(q.vertexColors).distinct().count()>1).count();
             check(smooth>0,"torch light has no per-vertex gradient");
@@ -61,17 +73,21 @@ public final class LodRegression {
             var negativeIndex=MeshExporter.writeStreaming(negativeGenerator,atlas,out.resolve("negative.lmesh"));var negativeFaces=new HashSet<String>();
             for(var entry:negativeIndex.sections())negativeFaces.addAll(geometry(negativeGenerator.buildSection(entry.position())));
             check(geometry(negativeFull).equals(negativeFaces),"negative section coordinates changed geometry or light");
+            var negativeBatchBuilder=builder(negativeSchematic,registry,baker,colors,atlas,true);var negativeBatchFaces=new HashSet<String>();for(var mesh:build32(negativeBatchBuilder).values())negativeBatchFaces.addAll(geometry(mesh));
+            check(geometry(negativeFull).equals(negativeBatchFaces),"negative 32-cell batch changed geometry or light");
             var overlapFull=new SceneBuilder(registry,baker,colors,atlas).realLighting(true);var overlapStream=new SceneBuilder(registry,baker,colors,atlas).realLighting(true);
             for(var region:schematic.regions().values())for(var offset:new int[][]{{0,0,0},{8,0,0}}){overlapFull.addRegion(region,offset);overlapStream.addRegion(region,offset);}
             var expectedOverlap=geometry(overlapFull.build());var overlapIndex=MeshExporter.writeStreaming(overlapStream,atlas,out.resolve("overlap.lmesh"));var overlapFaces=new HashSet<String>();
             for(var entry:overlapIndex.sections())overlapFaces.addAll(geometry(overlapStream.buildSection(entry.position())));
             check(expectedOverlap.equals(overlapFaces),"overlapping regions changed compact light sampling");
+            var overlapBatch=new SceneBuilder(registry,baker,colors,atlas).realLighting(true);for(var region:schematic.regions().values())for(var offset:new int[][]{{0,0,0},{8,0,0}})overlapBatch.addRegion(region,offset);var overlapBatchFaces=new HashSet<String>();for(var mesh:build32(overlapBatch).values())overlapBatchFaces.addAll(geometry(mesh));
+            check(expectedOverlap.equals(overlapBatchFaces),"overlapping regions changed across a 32-cell build boundary");
             var denseSchematic=LitematicaSchematic.load(dense);denseSchematic.materialize(registry);
             var denseIndex=MeshExporter.writeStreaming(builder(denseSchematic,registry,baker,colors,atlas,false),atlas,out.resolve("dense.lmesh"));
             long[] counts=new long[4];for(var entry:denseIndex.sections())for(int level=0;level<4;level++)counts[level]+=entry.levels().get(level).stream().mapToLong(StreamMeshExporter.Page::quads).sum();
             check(counts[1]<counts[0]/4&&counts[2]<counts[1]&&counts[3]<counts[2],"LOD did not simplify the actual surface");
             check(denseIndex.maximumSectionQuads()<=16*16*16*6,"exporter retained more than one section's geometry");
-            System.out.println("PASS: exact section faces, compact pages, shared transparent pages, smooth corners, actual LOD counts="+Arrays.toString(counts));
+            System.out.println("PASS: exact 32-cell batch boundaries, compact/fallback pages, shared transparency, smooth corners, actual LOD counts="+Arrays.toString(counts));
         }
         try(var engine=new RenderEngine(root)) {
             engine.loadResources(engine.defaultPackRoot());engine.open(small);

@@ -27,7 +27,7 @@ public class ProgressiveWriterRegression {
                 check(Files.size(file)>=committed,"published bytes not present");
                 try(var input=new RandomAccessFile(file.toFile(),"r")){
                     for(var page:entry.levels().getFirst()){
-                        check(page.offset()+page.bytes()<=committed,"future bytes were published");byte[] encoded=new byte[page.bytes()];input.seek(page.offset());input.readFully(encoded);byte[] raw=page.codec()==0?encoded:new InflaterInputStream(new ByteArrayInputStream(encoded)).readAllBytes();var crc=new CRC32();crc.update(raw);check(raw.length==page.rawBytes()&&crc.getValue()==page.checksum(),"published page could not be decoded");
+                        check(page.offset()+page.bytes()<=committed,"future bytes were published");byte[] encoded=new byte[page.bytes()];input.seek(page.offset());input.readFully(encoded);byte[] raw=(page.codec()&1)==0?encoded:new InflaterInputStream(new ByteArrayInputStream(encoded)).readAllBytes();var crc=new CRC32();crc.update(raw);check(raw.length==page.rawBytes()&&crc.getValue()==page.checksum(),"published page could not be decoded");
                     }
                 }
                 boolean incomplete=false;try{StreamMeshIndex.read(file,Map.of(),Map.of());}catch(IOException expected){incomplete=true;}check(incomplete,"incomplete mesh was accepted as a completed cache");seen[0]++;
@@ -37,6 +37,6 @@ public class ProgressiveWriterRegression {
         Path cancelled=out.resolve("cancelled.lmesh");boolean failed=false;
         try{StreamMeshExporter.write(source,atlas,cancelled,new StreamMeshExporter.Progress(){public void prepared(List<SectionVisibility.Position> p,long bytes){}public void section(StreamMeshExporter.Entry e,long bytes,int count)throws IOException{throw new IOException("cancel test");}});}catch(IOException expected){failed=true;}check(failed&&!Files.exists(cancelled),"cancelled work leaked a partial mesh");
         check(Thread.getAllStackTraces().keySet().stream().noneMatch(t->t.isAlive()&&t.getName().equals("schematic-section-builder")),"section producer survived cancellation");
-        System.out.println("PASS: view/frustum priority, readable published pages before completion, complete LMESH6 compatibility, partial-index rejection and producer cancellation");
+        System.out.println("PASS: view/frustum priority, readable compact pages before completion, complete LMESH7 compatibility, partial-index rejection and producer cancellation");
     }
 }

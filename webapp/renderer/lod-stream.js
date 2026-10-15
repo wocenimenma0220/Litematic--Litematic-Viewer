@@ -1,6 +1,6 @@
 'use strict';
 
-/** Random-access LMESH5 reader and a budgeted geometry working set. No full-scene vertex arrays. */
+/** Random-access LMESH5-7 reader and a budgeted geometry working set. No full-scene vertex arrays. */
 class LodStream {
   static async open(view,read,size,options={}) {
     const bytes=async(offset,length)=>{
@@ -10,8 +10,8 @@ class LodStream {
       return result;
     };
     const header=new DataView((await bytes(0,64)).buffer);
-    const format=String.fromCharCode(...new Uint8Array(header.buffer,0,6)),compressed=format==='LMESH6';
-    if(!['LMESH5','LMESH6'].includes(format)||header.getInt32(8)!==1||header.getInt32(28)!==4)throw Error('无法识别 LOD 模型格式');
+    const format=String.fromCharCode(...new Uint8Array(header.buffer,0,6)),compactFormat=format==='LMESH7',compressed=format!=='LMESH5';
+    if(!['LMESH5','LMESH6','LMESH7'].includes(format)||header.getInt32(8)!==1||header.getInt32(28)!==4)throw Error('无法识别 LOD 模型格式');
     if(compressed&&typeof options.readPage!=='function')throw Error('缺少压缩页读取接口');
     const count=header.getInt32(12),offset=Number(header.getBigUint64(16)),length=header.getInt32(24),quads=Number(header.getBigUint64(32));
     if(count<0||count>200000||length<4||length>128*1024*1024||offset<64||offset+length!==size||!Number.isSafeInteger(quads))throw Error('LOD 索引无效');
@@ -33,9 +33,10 @@ class LodStream {
         for(let p=0;p<n;p++) {
           const page={offset:Number(data.getBigUint64(at)),bytes:data.getInt32(at+8),quads:data.getInt32(at+12),layer:data.getInt32(at+16)};at+=20;
           page.rawBytes=compressed?data.getInt32(at):page.bytes;page.codec=compressed?data.getInt32(at+4):0;page.checksum=compressed?data.getUint32(at+8):0;if(compressed)at+=12;
+          const compactPage=compactFormat&&(page.codec&2)!==0,deflated=(page.codec&1)!==0;
           if(!Number.isSafeInteger(page.offset)||page.offset<64||page.bytes<1||page.offset+page.bytes>offset||![0,1,4,5,6].includes(page.layer)
-            ||page.rawBytes<1||page.rawBytes>16*1024*1024||!(page.codec===0&&page.bytes===page.rawBytes||page.codec===1&&page.bytes<page.rawBytes)
-            ||page.quads<0||page.quads>8192||(page.layer!==6&&page.rawBytes!==page.quads*80)||(page.layer===6&&(page.quads!==0||page.rawBytes<4||(page.rawBytes-4)%48)))throw Error('LOD 几何页无效');
+            ||page.rawBytes<1||page.rawBytes>16*1024*1024||page.codec<0||page.codec>(compactFormat?3:1)||!(deflated&&page.bytes<page.rawBytes||!deflated&&page.bytes===page.rawBytes)
+            ||page.quads<0||page.quads>8192||(page.layer!==6&&page.rawBytes!==page.quads*(compactPage?40:80))||(page.layer===6&&(compactPage||page.quads!==0||page.rawBytes<4||(page.rawBytes-4)%48)))throw Error('LOD 几何页无效');
           const previous=descriptors.get(page.offset);if(previous&&['bytes','quads','layer','rawBytes','codec','checksum'].some(k=>previous[k]!==page[k]))throw Error('LOD 页描述冲突');
           descriptors.set(page.offset,page);pages.push(previous||page);
         }
@@ -47,7 +48,7 @@ class LodStream {
       sections.push(section);
     }
     if(at!==length||total!==quads)throw Error('LOD 总面数不正确');
-    return new LodStream(view,{sections,min,max,quads,indexBytes:length,compressed},bytes,options);
+    return new LodStream(view,{sections,min,max,quads,indexBytes:length,compressed,compactFormat},bytes,options);
   }
   constructor(view,manifest,read,options) {
     this.view=view;this.gl=view.gl;this.manifest=manifest;this.read=read;
@@ -86,7 +87,8 @@ class LodStream {
         if(!Array.isArray(pages)||pages.length>100000)throw Error('渐进页数无效');
         return pages.map(source=>{
           const page={...source,source:this.detailSource,proxy:level===3};
-          if(!['offset','bytes','quads','layer','rawBytes','codec','checksum'].every(k=>Number.isSafeInteger(page[k]))||page.offset<64||page.bytes<1||page.offset+page.bytes>committed||![0,1,4,5,6].includes(page.layer)||page.quads<0||page.quads>8192||page.rawBytes<1||page.rawBytes>16*1024*1024||!(page.codec===0&&page.bytes===page.rawBytes||page.codec===1&&page.bytes<page.rawBytes)||page.checksum<0||page.checksum>0xffffffff||(page.layer===6?(page.quads!==0||page.rawBytes<4||(page.rawBytes-4)%48):page.rawBytes!==page.quads*80))throw Error('渐进模型页无效');
+          const compactPage=this.manifest.compactFormat&&(page.codec&2)!==0,deflated=(page.codec&1)!==0;
+          if(!['offset','bytes','quads','layer','rawBytes','codec','checksum'].every(k=>Number.isSafeInteger(page[k]))||page.offset<64||page.bytes<1||page.offset+page.bytes>committed||![0,1,4,5,6].includes(page.layer)||page.quads<0||page.quads>8192||page.rawBytes<1||page.rawBytes>16*1024*1024||page.codec<0||page.codec>3||!(deflated&&page.bytes<page.rawBytes||!deflated&&page.bytes===page.rawBytes)||page.checksum<0||page.checksum>0xffffffff||(page.layer===6?(compactPage||page.quads!==0||page.rawBytes<4||(page.rawBytes-4)%48):page.rawBytes!==page.quads*(compactPage?40:80)))throw Error('渐进模型页无效');
           return page;
         });
       });
@@ -303,6 +305,7 @@ class LodStream {
           if(count<0||4+count*48!==wire.byteLength)throw Error('LOD 透明排序数据无效');
           resident.bsp=bsp;continue;
         }
+        if((descriptor.codec&2)!==0)wire=LodStream.expandCompact(wire,descriptor.quads,task.section.position);
         const positions=new DataView(wire.buffer,wire.byteOffset,wire.byteLength);
         for(let vertex=0;vertex<descriptor.quads*4;vertex++)for(let axis=0;axis<3;axis++)if(!Number.isFinite(positions.getFloat32(vertex*20+axis*4,true)))throw Error('LOD 顶点坐标无效');
         const page={...descriptor};pages.push(page);page.vbo=gl.createBuffer();
@@ -336,6 +339,21 @@ class LodStream {
       }
       return resident;
     }catch(error){this.destroyUninstalled(resident);throw error;}
+  }
+  static expandCompact(wire,quads,position) {
+    if(wire.byteLength!==quads*40)throw Error('紧凑几何页长度错误');
+    const input=new DataView(wire.buffer,wire.byteOffset,wire.byteLength),expanded=new Uint8Array(quads*80),output=new DataView(expanded.buffer),corners=[[0,0],[0,1],[1,1],[1,0]];
+    for(let q=0;q<quads;q++) {
+      const source=q*40,local=[input.getInt16(source,true),input.getInt16(source+2,true),input.getInt16(source+4,true)],axis=input.getUint8(source+6),permutation=input.getUint8(source+7);
+      if(axis>2)throw Error('紧凑几何轴无效');const a=(axis+1)%3,b=(axis+2)%3,base=local.map((value,i)=>value+position[i]*16);let seen=0;
+      for(let vertex=0;vertex<4;vertex++) {
+        const code=(permutation>>(vertex*2))&3;seen|=1<<code;const point=base.slice();point[a]+=corners[code][0];point[b]+=corners[code][1];const target=q*80+vertex*20;
+        for(let component=0;component<3;component++)output.setFloat32(target+component*4,point[component],true);
+        expanded.set(wire.subarray(source+8+vertex*8,source+16+vertex*8),target+12);
+      }
+      if(seen!==15)throw Error('紧凑几何顶点无效');
+    }
+    return expanded;
   }
   bind(page) {
     if(this.view.uni.colorOnly!=null)this.gl.uniform1f(this.view.uni.colorOnly,page.proxy?1:0);

@@ -40,6 +40,7 @@ const els = {
   bg: $('bg'),
   render: $('btnRender'),
   export: $('btnExport'),
+  exportGif: $('btnExportGif'),
   preview: $('preview'),
   gl: $('gl'),
   flyBtn: $('btnFly'),
@@ -148,6 +149,7 @@ function updateButtons() {
   els.render.disabled = !ready;
   els.materials.disabled=els.menuMaterials.disabled=!ready;
   els.export.disabled = !ready;
+  els.exportGif.disabled = !ready;
   els.menuExportPng.disabled = !ready;
   els.menuExportGif.disabled = !ready;
   els.skinOnline.disabled = busy||state.scenePreparing;
@@ -415,7 +417,7 @@ async function applyGpuScene(res,options={}) {
     if (!state.view) state.view = new GpuView(els.gl);
     const streamed = !!res.meshTransfer;
     if(streamed)state.viewReady=false;
-    const stats = ['LMESH5','LMESH6'].includes(res.meshFormat)
+    const stats = ['LMESH5','LMESH6','LMESH7'].includes(res.meshFormat)
       ? await state.view.uploadLodStream((offset,length)=>window.engine.readSceneChunk(res.meshTransfer.id,offset,length),res.meshTransfer.size,{
           overview:res.overview===true,coarseOverview:res.coarseOverview===true,
           budgetBytes:state.geometryBudgetMB*1048576,
@@ -437,7 +439,7 @@ async function applyGpuScene(res,options={}) {
         (loaded,total)=>{els.busyText.textContent=`载入大投影… ${Math.floor(loaded/Math.max(1,total)*100)}%`;})
       : state.view.uploadMesh(res.meshArrayBuffer);
     state.view.setFrameBounds(res.min,res.max);
-    if(!['LMESH5','LMESH6'].includes(res.meshFormat)){els.streamInfo.textContent='完整模型已载入';$('pageReadInfo').textContent='';}
+    if(!['LMESH5','LMESH6','LMESH7'].includes(res.meshFormat)){els.streamInfo.textContent='完整模型已载入';$('pageReadInfo').textContent='';}
     state.view.uploadAtlas(atlasImage);
     atlasImage.close();
     state.viewReady = true;
@@ -1111,14 +1113,8 @@ els.menuImportPack.addEventListener('click', async () => {
   await importPack();
 });
 $('menuImportPackFolder').addEventListener('click',async()=>{toggleFileMenu(false);await importPack('folder');});
-els.menuExportPng.addEventListener('click', () => {
-  toggleFileMenu(false);
-  exportPng();
-});
-els.menuExportGif.addEventListener('click', () => {
-  toggleFileMenu(false);
-  exportGif();
-});
+els.menuExportPng.addEventListener('click', () => { toggleFileMenu(false); exportPng(); });
+els.menuExportGif.addEventListener('click', () => { toggleFileMenu(false); exportGif(); });
 els.menuQuit.addEventListener('click', () => {
   window.close();
 });
@@ -1230,8 +1226,7 @@ async function rebuildPreview() {
 }
 els.render.addEventListener('click', rebuildPreview);
 els.export.addEventListener('click', exportPng);
-els.menuExportPng.addEventListener('click', exportPng);
-els.menuExportGif.addEventListener('click', exportGif);
+els.exportGif.addEventListener('click', exportGif);
 
 function updatePreviewBackend() {
   els.previewBackendInfo.textContent=state.previewBackend==='cpu'
@@ -1389,10 +1384,10 @@ async function exportPng() {
 async function exportGif() {
   if (!state.file || state.rendering || state.scenePreparing) return;
   const suggested = ((state.info && state.info.name) || 'animation') + '.gif';
-  const out = await window.shellApi.savePng(suggested);
+  const out = await window.shellApi.saveGif(suggested);
   if (!out) return;
   const size = Number(els.size.value);
-  setBusy(true, '渲染动画…');
+  setBusy(true, '渲染旋转动画…');
   try {
     const res = await window.engine.renderAnimation({
       ...renderParams(size, size),
@@ -1401,7 +1396,7 @@ async function exportGif() {
       delay: 5,
     });
     log(`已导出动画：${res.path}（${res.frames} 帧）`, 'ok');
-    if(res.animationTruncated)log('动画达到帧数上限，部分纹理的循环在首尾衔接时可能跳变。');
+    window.shellApi.reveal(res.path);
   } catch (err) {
     log('动画导出失败：' + err.message, 'err');
   } finally {

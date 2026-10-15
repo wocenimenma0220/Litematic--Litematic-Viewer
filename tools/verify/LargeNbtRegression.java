@@ -35,7 +35,18 @@ public final class LargeNbtRegression {
         var large=NbtFileUtils.readSchematic(huge);var largeWords=((NbtPackedLongArray)large.getCompound("Regions").orElseThrow().getCompound("big").orElseThrow().get("BlockStates").orElseThrow()).value;
         check(largeWords.length()==wordCount&&largeWords.get(wordCount-1)==0&&largeWords.retainedBytes()<2*1024*1024,"large empty data stayed dense");
         failed=false;try{NbtFileUtils.readCompressedOrRaw(huge);}catch(IOException e){failed=true;check(!e.toString().contains("Unknown(31)"),"quota failure was masked");}check(failed,"generic NBT allocation cap was bypassed");
-        System.out.println("PASS: raw/GZIP detection, original truncated error, malformed lengths, exact random words and cross-page palette entries, >512 MiB schematic with <2 MiB backing");
+        var incompressibleWords=new long[PackedLongArray.PAGE_WORDS*6];for(int i=0;i<incompressibleWords.length;i++)incompressibleWords[i]=random.nextLong();
+        bytes.reset();try(var writer=new DataOutputStream(bytes)){writer.writeInt(incompressibleWords.length);for(long word:incompressibleWords)writer.writeLong(word);}
+        var incompressible=PackedLongArray.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())),new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true));
+        check(incompressible.retainedBytes()>incompressibleWords.length*7L,"low-compression pages were not charged at retained size");
+        var boundary=new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true);long limit=boundary.retainedLimit();
+        check(limit>0&&limit<=NbtSizeTracker.DEFAULT_MAX_BYTES&&limit<=Runtime.getRuntime().maxMemory()/3,"retained heap limit is not production-safe");
+        boundary.retainPacked(limit);failed=false;try{boundary.retainPacked(1);}catch(IOException e){failed=true;check(e.getMessage().contains("可用读取内存"),"retained boundary used the wrong error");}
+        check(failed&&boundary.retainedBytes()==limit,"retained heap boundary was bypassed");
+        var logicalBoundary=new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true);logicalBoundary.incrementPacked(NbtSizeTracker.SCHEMATIC_MAX_BYTES);
+        failed=false;try{logicalBoundary.incrementPacked(1);}catch(IOException e){failed=true;check(e.getMessage().contains("解压数据"),"logical boundary used the wrong error");}
+        check(failed,"16 GiB logical schematic boundary was bypassed");
+        System.out.println("PASS: raw/GZIP detection, malformed lengths, packed page fidelity, logical/retained production limits, low-compression accounting, >512 MiB logical data with <2 MiB backing");
         if(args.length>1){
             System.setProperty("litematicrender.skins.offline","true");long start=System.nanoTime();
             try(var engine=new RenderEngine(root)){

@@ -474,7 +474,7 @@ public final class RenderEngine implements AutoCloseable {
         }
         if(progress==null)atlas.stitched.writePng(atlasOut);var index=streamIndex;
         Map<String,Object> result=new LinkedHashMap<>();
-        result.put("atlas",atlasOut.toAbsolutePath().toString());result.put("mesh",meshOut.toAbsolutePath().toString());result.put("meshFormat","LMESH6");
+        result.put("atlas",atlasOut.toAbsolutePath().toString());result.put("mesh",meshOut.toAbsolutePath().toString());result.put("meshFormat","LMESH7");
         result.put("atlasWidth",atlas.stitched.width);result.put("atlasHeight",atlas.stitched.height);result.put("quads",index.quads());result.put("vertices",index.quads()*4);
         result.put("skins",index.skins());result.put("entities",index.entities());result.put("sceneCached",cached);result.put("realLighting",realLighting);
         result.put("exportMillis",System.currentTimeMillis()-begin);result.put("sceneBuildMillis",System.currentTimeMillis()-begin);result.put("meshBytes",index.bytes());
@@ -516,7 +516,7 @@ public final class RenderEngine implements AutoCloseable {
                 public void stage(String stage){liveJob.stage=stage;}
                 public void prepared(List<io.github.litematicrender.render.scene.SectionVisibility.Position> positions,long committed)throws IOException{
                     if(liveJob.cancelled)throw new java.io.InterruptedIOException("预览已取消");atlas.stitched.writePng(atlasFile);liveJob.total=positions.size();liveJob.committedBytes=committed;
-                    var b=overview.bounds();liveJob.live=Map.of("atlas",atlasFile.toString(),"mesh",meshFile.toString(),"meshFormat","LMESH6","committedBytes",committed,"sections",positions.size(),"min",List.of(b[0],b[1],b[2]),"max",List.of(b[3],b[4],b[5]),"skins",snapshot.summary());liveJob.stage="details-building";
+                    var b=overview.bounds();liveJob.live=Map.of("atlas",atlasFile.toString(),"mesh",meshFile.toString(),"meshFormat","LMESH7","committedBytes",committed,"sections",positions.size(),"min",List.of(b[0],b[1],b[2]),"max",List.of(b[3],b[4],b[5]),"skins",snapshot.summary());liveJob.stage="details-building";
                 }
                 public void section(StreamMeshExporter.Entry entry,long committed,int completed)throws IOException{
                     if(liveJob.cancelled)throw new java.io.InterruptedIOException("预览已取消");synchronized(liveJob){liveJob.entries.add(entry);liveJob.committedBytes=committed;}
@@ -547,7 +547,7 @@ public final class RenderEngine implements AutoCloseable {
                     var overview=new io.github.litematicrender.render.scene.OverviewMesh(schematic,baker,atlas);var colorAtlas=SpriteAtlas.overview();
                     Path mesh=job.directory.resolve("mesh.lmesh"),png=job.directory.resolve("atlas.png");var index=StreamMeshExporter.write(overview,colorAtlas,mesh);colorAtlas.stitched.writePng(png);
                     if(job.cancelled)throw new java.util.concurrent.CancellationException();var b=overview.bounds();var metadata=new LinkedHashMap<String,Object>();
-                    metadata.put("atlas",png.toString());metadata.put("mesh",mesh.toString());metadata.put("meshFormat","LMESH6");metadata.put("meshBytes",index.bytes());metadata.put("quads",index.quads());metadata.put("sections",index.sections().size());metadata.put("overview",true);metadata.put("overviewStep",overview.step());metadata.put("exportMillis",System.currentTimeMillis()-started);metadata.put("min",List.of(b[0],b[1],b[2]));metadata.put("max",List.of(b[3],b[4],b[5]));
+                    metadata.put("atlas",png.toString());metadata.put("mesh",mesh.toString());metadata.put("meshFormat","LMESH7");metadata.put("meshBytes",index.bytes());metadata.put("quads",index.quads());metadata.put("sections",index.sections().size());metadata.put("overview",true);metadata.put("overviewStep",overview.step());metadata.put("exportMillis",System.currentTimeMillis()-started);metadata.put("min",List.of(b[0],b[1],b[2]));metadata.put("max",List.of(b[3],b[4],b[5]));
                     job.overview=Map.copyOf(metadata);job.stage="full-building";return overview;
                 },job);
                 if(job.cancelled)throw new java.util.concurrent.CancellationException();job.full=Map.copyOf(result);job.stage="ready";
@@ -591,12 +591,7 @@ public final class RenderEngine implements AutoCloseable {
 
 
     /**
-     * Renders an animation to an animated GIF.
-     *
-     * <p>Only animated textures differ between frames, so the frame count follows the pack's
-     * shortest animation cycle (usually water) rather than the longest.
-     *
-     * @param ticks maximum frames; the actual count is capped to one full animation cycle
+     * Renders one full camera revolution while advancing animated texture ticks.
      */
     public synchronized Map<String, Object> renderAnimation(Path outGif, RenderSettings settings,
                                                             int ticks, int delayCs) throws Exception {
@@ -609,12 +604,12 @@ public final class RenderEngine implements AutoCloseable {
         long t0 = System.currentTimeMillis();
         SceneMesh mesh=sceneMesh(settings.realLighting);
         long buildMillis=System.currentTimeMillis()-t0;
-        var cycle=this.atlas.animationCycle(mesh,ticks);
-        int frameCount=cycle.frames();
+        int frameCount=Math.max(2,Math.min(360,ticks));
+        var cycle=this.atlas.animationCycle(mesh,frameCount);
         long[] renderingNanos={0};
         GifWriter.writeFrames(outGif,frameCount,delayCs,i -> {
             long renderStart=System.nanoTime();
-            RenderSettings s = new RenderSettings(settings.rotationDeg, settings.slantDeg,
+            RenderSettings s = new RenderSettings(settings.rotationDeg+i*360f/frameCount, settings.slantDeg,
                 settings.width, settings.height);
             s.transparentBackground = settings.transparentBackground;
             s.backgroundColor = settings.backgroundColor;
@@ -634,8 +629,8 @@ public final class RenderEngine implements AutoCloseable {
         out.put("width", settings.width);
         out.put("height", settings.height);
         out.put("frames", frameCount);
-        out.put("animationPeriodTicks", cycle.complete()?frameCount:0);
-        out.put("animationTruncated", !cycle.complete());
+        out.put("animationPeriodTicks", cycle.complete()?cycle.frames():0);
+        out.put("cameraRevolutions", 1);
         out.put("delayCentiseconds", delayCs);
         out.put("sceneBuildMillis",buildMillis);
         out.put("renderMillis", buildMillis+renderingNanos[0]/1_000_000);

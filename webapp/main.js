@@ -241,7 +241,7 @@ async function scenePayload(event,res,options={}) {
   const meshBytes = (await fs.promises.stat(res.mesh)).size;
   diagnostic(options.growing?'progressive detail stream opened: '+res.committedBytes+' committed bytes':'scene exported: ' + meshBytes + ' bytes, ' + res.quads + ' faces');
   let payload;
-  if (['LMESH5','LMESH6'].includes(res.meshFormat) || meshBytes > INLINE_LIMIT) {
+  if (['LMESH5','LMESH6','LMESH7'].includes(res.meshFormat) || meshBytes > INLINE_LIMIT) {
     payload = { meshTransfer: await sceneTransfer.open(res.mesh, event.sender.id,{...options,committedBytes:res.committedBytes}) };
     diagnostic('using chunked scene transfer');
   } else {
@@ -353,6 +353,16 @@ ipcMain.handle('dialog:savePng', async (_e, suggested) => {
     filters: [{ name: 'PNG 图片', extensions: ['png'] }],
   });
   return res.canceled ? null : res.filePath;
+});
+
+ipcMain.handle('dialog:saveGif', async (_e, suggested) => {
+  const res = await dialog.showSaveDialog(mainWindow, {
+    title: '导出旋转 GIF',
+    defaultPath: suggested || 'animation.gif',
+    filters: [{ name: 'GIF 动画', extensions: ['gif'] }],
+  });
+  if (res.canceled) return null;
+  return /\.gif$/i.test(res.filePath) ? res.filePath : res.filePath + '.gif';
 });
 
 ipcMain.handle('dialog:openPack', async (_event, kind) => {

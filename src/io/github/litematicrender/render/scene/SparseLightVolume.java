@@ -38,7 +38,7 @@ public final class SparseLightVolume implements LightSampler {
     private final Map<Column,ColumnData> columns=new HashMap<>();
     private final Map<Section,Chunk> chunks=new LinkedHashMap<>();
     private final List<Chunk> ids=new ArrayList<>();
-    private boolean computed;
+    private boolean computed,hasBlockLight;
     public SparseLightVolume(int sx,int sy,int sz,BlockShape shapes){this(sx,sy,sz,shapes,false);}
     public SparseLightVolume(int sx,int sy,int sz,BlockShape shapes,boolean realLighting){this(sx,sy,sz,shapes,realLighting,null);}
     public SparseLightVolume(int sx,int sy,int sz,BlockShape shapes,boolean realLighting,LightVolume.Cells source){this.sx=sx;this.sy=sy;this.sz=sz;this.shapes=shapes;this.realLighting=realLighting;this.source=source;}
@@ -91,13 +91,23 @@ public final class SparseLightVolume implements LightSampler {
             if(!inside(x,y,z)){chunk.sky.set(local,0);continue;}
             BlockState state=state(chunk,local);
             chunk.sky.set(local,shapes.lightPermeable(state)?(realLighting?direct(x,y,z):15):0);
-            chunk.block.set(local,(realLighting?LightVolume.realEmission(state):LightVolume.emission(state)));
+            int emission=realLighting?LightVolume.realEmission(state):LightVolume.emission(state);chunk.block.set(local,emission);hasBlockLight|=emission>0;
         }
-        if(realLighting){seedEmptyBorders();propagateReal(true);propagateReal(false);compact();return;}
+        if(realLighting){seedEmptyBorders();parallelPropagation();compact();return;}
         // 1.0.8 seeds full sky in every permeable cell, so no sky spread is needed.
         propagateBlock();compact();
     }
     private void compact(){for(Chunk chunk:ids){chunk.sky.compact();chunk.block.compact();}}
+    private void parallelPropagation() {
+        if(!hasBlockLight){propagateReal(true);return;}
+        if(!Boolean.parseBoolean(System.getProperty("litematicrender.light.parallel","true"))||(long)sx*sy*sz<262_144||Runtime.getRuntime().availableProcessors()<2){propagateReal(true);propagateReal(false);return;}
+        var failure=new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        Thread skyThread=Thread.ofPlatform().name("sparse-sky-light").daemon(true).unstarted(()->{try{propagateReal(true);}catch(Throwable error){failure.compareAndSet(null,error);}});
+        Thread blockThread=Thread.ofPlatform().name("sparse-block-light").daemon(true).unstarted(()->{try{propagateReal(false);}catch(Throwable error){failure.compareAndSet(null,error);}});
+        skyThread.start();blockThread.start();
+        try{skyThread.join();blockThread.join();}catch(InterruptedException stopped){skyThread.interrupt();blockThread.interrupt();Thread.currentThread().interrupt();throw new java.util.concurrent.CancellationException("光照计算已取消");}
+        Throwable error=failure.get();if(error instanceof RuntimeException runtime)throw runtime;if(error instanceof Error fatal)throw fatal;if(error!=null)throw new IllegalStateException(error);
+    }
     private int direct(int x,int y,int z){ColumnData data=columns.get(new Column(x,z));return data==null?15:data.direct(y);}
     /** Analytic sky in unallocated air, as in 1.0.10; no arrays for distant gaps. */
     private int emptySky(int x,int y,int z) {

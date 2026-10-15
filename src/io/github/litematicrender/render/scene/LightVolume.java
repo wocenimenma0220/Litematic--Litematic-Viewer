@@ -109,22 +109,30 @@ public final class LightVolume implements LightSampler {
     /** Runs both channels. Call once, after construction. */
     public void compute() {
         if (this.realLighting) {
-            seedRealSky();
-            spreadReal(this.sky, true);
-            seedBlock();
-            spreadReal(this.block, false);
+            seedRealLight();
+            if(maxEmission==0)spreadReal(this.sky,true);else parallel(() -> spreadReal(this.sky, true), () -> spreadReal(this.block, false));
             sky.compact();block.compact();return;
         }
         this.seedSky();
-        this.spreadSky();
-        this.seedBlock();
-        this.spreadBlock();sky.compact();block.compact();
+        parallel(this::spreadSky, () -> { this.seedBlock();this.spreadBlock(); });
+        sky.compact();block.compact();
+    }
+
+    /** Sky and block light use separate grids and can propagate safely in parallel. */
+    private void parallel(Runnable first,Runnable second) {
+        if(!Boolean.parseBoolean(System.getProperty("litematicrender.light.parallel","true"))||(long)sx*sy*sz<262_144||Runtime.getRuntime().availableProcessors()<2){first.run();second.run();return;}
+        var failure=new java.util.concurrent.atomic.AtomicReference<Throwable>();
+        Thread a=Thread.ofPlatform().name("schematic-sky-light").daemon(true).unstarted(()->{try{first.run();}catch(Throwable error){failure.compareAndSet(null,error);}});
+        Thread b=Thread.ofPlatform().name("schematic-block-light").daemon(true).unstarted(()->{try{second.run();}catch(Throwable error){failure.compareAndSet(null,error);}});
+        a.start();b.start();
+        try{a.join();b.join();}catch(InterruptedException stopped){a.interrupt();b.interrupt();Thread.currentThread().interrupt();throw new java.util.concurrent.CancellationException("光照计算已取消");}
+        Throwable error=failure.get();if(error instanceof RuntimeException runtime)throw runtime;if(error instanceof Error fatal)throw fatal;if(error!=null)throw new IllegalStateException(error);
     }
 
     // ------------------------------------------------------------------ sky light
 
     /** 1.0.10 direct sky: roofs block columns; water and leaves absorb light. */
-    private void seedRealSky() {
+    private void seedRealLight() {
         sky.fill(15);
         for (int z=0;z<sz;z++) for (int x=0;x<sx;x++) {
             if(x==0&&Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException();
@@ -133,7 +141,8 @@ public final class LightVolume implements LightSampler {
                 BlockState state=at(x,y,z);
                 int opacity=skyOpacity(state,shapes);
                 level=Math.max(0,level-(opacity==0 && level==15?0:Math.max(1,opacity)));
-                sky.set(idx(x,y,z),shapes.lightPermeable(state)?level:0);
+                int index=idx(x,y,z);sky.set(index,shapes.lightPermeable(state)?level:0);
+                int emission=realEmission(state);if(emission>0){block.set(index,emission);maxEmission=Math.max(maxEmission,emission);}
             }
         }
     }

@@ -1,6 +1,6 @@
-"""Independent LMESH6 reader, lossless 40-byte unit-face prototype and 16/32 cache-group study.
+"""Independent LMESH6/7 reader, lossless 40-byte unit-face check and 16/32 cache-group study.
 
-This is an experiment, not a production mesh encoder or a 32-cell mesher benchmark.
+The 16/32 grouping portion remains a cache-access simulation, separate from the production mesher benchmark.
 """
 from pathlib import Path
 from collections import defaultdict, OrderedDict
@@ -12,7 +12,8 @@ mesh=Path(result['cold']['mesh']); output=root/'tools/verify/cache-large-output/
 
 def parse(f):
     h=f.read(64)
-    assert h[:8]==b'LMESH6\0\0'
+    assert h[:8] in (b'LMESH6\0\0',b'LMESH7\0\0')
+    format=h[:6].decode('ascii')
     count,offset,length,lods,quads=struct.unpack_from('>iqiiq',h,12)
     assert lods==4 and offset+length==mesh.stat().st_size and length<=128*1024*1024
     f.seek(offset); c=memoryview(f.read(length)); assert struct.unpack_from('>i',c)[0]==count
@@ -27,11 +28,11 @@ def parse(f):
             levels.append(pages)
         sections.append((p,box,levels))
     assert at==length
-    return sections,quads,length
+    return sections,quads,length,format
 
 def read_page(f,p):
     offset,size,n,layer,rawsize,codec,crc=p
-    f.seek(offset); data=f.read(size); raw=zlib.decompress(data) if codec else data
+    f.seek(offset); data=f.read(size); raw=zlib.decompress(data) if codec&1 else data
     assert len(raw)==rawsize and zlib.crc32(raw)==crc
     return raw
 
@@ -84,15 +85,20 @@ def simulate(sections,unit,budget):
     return {'unit':unit,'budgetBytes':budget,'groups':len(groups),'largestGroupStoredBytes':max(weights.values()),'loads':loads,'hits':hits,'evictions':evictions,'storedBytesRead':bytes_read,'extraSections':extra,'moves':movements}
 
 with mesh.open('rb') as f:
-    sections,quads,catalog_bytes=parse(f);faces=sum(p[2] for _,_,levels in sections for p in levels[0] if p[3] in (0,1));stride=max(1,faces//50000)
+    sections,quads,catalog_bytes,format=parse(f);faces=sum(p[2] for _,_,levels in sections for p in levels[0] if p[3] in (0,1));stride=max(1,faces//50000)
     counter=sampled=eligible=0; start=time.perf_counter(); pages_verified=0; compression_pages=[]; compression_raw=0
     for si,(position,box,levels) in enumerate(sections):
         for page in levels[0]:
             if page[3] not in (0,1):continue
-            raw=read_page(f,page);pages_verified+=1
-            for qi in range((-counter)%stride,page[2],stride):
-                sampled+=1
-                if compact(raw,qi*80,position) is not None:eligible+=1
+            raw=read_page(f,page);pages_verified+=1;indices=range((-counter)%stride,page[2],stride)
+            if page[5]&2:
+                assert len(raw)==page[2]*40
+                for _ in indices:sampled+=1;eligible+=1
+            else:
+                assert len(raw)==page[2]*80
+                for qi in indices:
+                    sampled+=1
+                    if compact(raw,qi*80,position) is not None:eligible+=1
             counter+=page[2]
             if len(compression_pages)<96 and si%max(1,len(sections)//96)==0 and len(raw)>1000:
                 compression_pages.append(raw);compression_raw+=len(raw)
@@ -105,8 +111,8 @@ with mesh.open('rb') as f:
         for raw,data in zip(compression_pages,encoded):assert zlib.decompress(data)==raw
         codecs.append({'deflateLevel':level,'rawBytes':compression_raw,'storedBytes':sum(map(len,encoded)),'compressMillis':encode_ms,'decodeMillis':(time.perf_counter()-start)*1000})
     report={'pass':True,'mesh':str(mesh),'meshBytes':mesh.stat().st_size,'sections':len(sections),'fullDetailQuads':quads,'catalogBytes':catalog_bytes,'pagesVerified':pages_verified,'regularLayersQuads':faces,
-      'prototype':{'recordBytes':40,'sampleStride':stride,'sampledQuads':sampled,'losslessEligible':eligible,'eligibleFraction':eligible/sampled,'sampleBytesBefore':sampled*80,'sampleBytesWithFallback':eligible*40+(sampled-eligible)*80,'elapsedMillis':prototype_ms,'deployed':False},
+      'prototype':{'recordBytes':40,'sampleStride':stride,'sampledQuads':sampled,'losslessEligible':eligible,'eligibleFraction':eligible/sampled,'sampleBytesBefore':sampled*80,'sampleBytesWithFallback':eligible*40+(sampled-eligible)*80,'elapsedMillis':prototype_ms,'deployed':format=='LMESH7'},
       'compressionSample':{'pages':len(compression_pages),'codecs':codecs,'runtime':'Python zlib; separate from production JDK timing'},
       'cacheGroupingSimulation':[simulate(sections,unit,budget*1048576) for budget in [32,256] for unit in [16,32]],
-      'limits':['40-byte prototype is lossless only for eligible unit axis faces; other geometry retains 80 bytes.','16/32 results regroup existing 16-cell meshes; they do not measure 32-cell meshing throughput or a real camera frustum.','Sample eligibility is not a full-scene ratio. Compact encoding is not deployed.']}
+      'limits':['40-byte records are lossless only for eligible unit axis faces; other geometry retains 80 bytes.','16/32 results regroup existing 16-cell meshes; they do not measure 32-cell meshing throughput or a real camera frustum.','Sample eligibility is not a full-scene ratio.']}
     output.write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8');print(json.dumps(report,ensure_ascii=False))

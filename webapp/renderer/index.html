@@ -21,7 +21,7 @@
         <div class="menusep"></div>
         <button id="menuMaterials" disabled>查看 / 导出材料清单…</button>
         <button id="menuExportPng" disabled>导出 PNG…</button>
-        <button id="menuExportGif" disabled>导出动画 GIF…</button>
+        <button id="menuExportGif" disabled>导出 360° 旋转 GIF…</button>
         <div class="menusep"></div>
         <button id="menuQuit">退出</button>
       </div>
@@ -164,6 +164,7 @@
           <span>导出透明背景</span>
         </label>
         <p class="muted small">网格仅用于预览，导出时自动透明。</p>
+        <p class="muted small">GIF 从当前水平角度旋转一周，共 64 帧；俯仰角、分辨率和背景沿用以上设置。</p>
         <div class="field">
           <label for="bg">背景色</label>
           <input type="color" id="bg" value="#ffffff" />
@@ -173,6 +174,7 @@
       <div class="actions">
         <button id="btnRender" class="primary" disabled>重新渲染</button>
         <button id="btnExport" disabled>导出 PNG…</button>
+        <button id="btnExportGif" disabled>导出 360° 旋转 GIF…</button>
       </div>
 
       <p id="hint" class="muted small">先打开一个 .litematic 文件。</p>

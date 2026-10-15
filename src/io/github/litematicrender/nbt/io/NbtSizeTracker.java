@@ -44,4 +44,8 @@ public final class NbtSizeTracker {
     public long currentBytes() {
         return this.currentBytes;
     }
+
+    /** Diagnostics and boundary tests; this is retained heap, not logical decompressed bytes. */
+    public long retainedBytes() { return this.retainedBytes; }
+    public long retainedLimit() { return this.retainedLimit; }
 }

@@ -11,7 +11,7 @@ public final class StreamMeshIndex {
     private static void require(boolean valid)throws IOException{if(!valid)throw new IOException("场景缓存索引损坏");}
     public static StreamMeshExporter.Index read(Path path,Map<String,Object> skins,Map<String,Object> entities)throws IOException {
         try(var file=new RandomAccessFile(path.toFile(),"r")) {
-            long size=file.length();require(size>=64);byte[] magic=new byte[8];file.readFully(magic);boolean compressed=Arrays.equals(magic,new byte[]{'L','M','E','S','H','6',0,0});require(compressed||Arrays.equals(magic,new byte[]{'L','M','E','S','H','5',0,0}));
+            long size=file.length();require(size>=64);byte[] magic=new byte[8];file.readFully(magic);boolean compact=Arrays.equals(magic,new byte[]{'L','M','E','S','H','7',0,0}),compressed=compact||Arrays.equals(magic,new byte[]{'L','M','E','S','H','6',0,0});require(compressed||Arrays.equals(magic,new byte[]{'L','M','E','S','H','5',0,0}));
             require(file.readInt()==1);int count=file.readInt();long catalog=file.readLong();int length=file.readInt();require(file.readInt()==4);long quads=file.readLong();
             require(count>=0&&count<=200000&&length>=4&&length<=128*1024*1024&&catalog>=64&&catalog<=size-length&&catalog+length==size&&quads>=0);
             float[] bounds=new float[6];for(int i=0;i<6;i++)bounds[i]=file.readFloat();bounds(bounds);
@@ -26,8 +26,8 @@ public final class StreamMeshIndex {
                         long offset=file.readLong();int bytes=file.readInt(),faces=file.readInt(),layer=file.readInt();
                         require(offset>=64&&bytes>0&&offset<=catalog-bytes&&faces>=0&&faces<=8192&&Set.of(0,1,4,5,6).contains(layer));
                         int raw=compressed?file.readInt():bytes,codec=compressed?file.readInt():0;long checksum=compressed?Integer.toUnsignedLong(file.readInt()):0;
-                        require(raw>=1&&raw<=StreamMeshExporter.MAX_RAW_PAGE&&(codec==0&&bytes==raw||codec==1&&bytes<raw));
-                        require(layer==6?faces==0&&raw>=4&&(raw-4)%48==0:raw==faces*80);
+                        boolean compactPage=compact&&(codec&2)!=0,deflated=(codec&1)!=0;require(raw>=1&&raw<=StreamMeshExporter.MAX_RAW_PAGE&&codec>=0&&codec<=(compact?3:1)&&(deflated&&bytes<raw||!deflated&&bytes==raw));
+                        require(layer==6?faces==0&&!compactPage&&raw>=4&&(raw-4)%48==0:raw==faces*(compactPage?40:80));
                         var page=new StreamMeshExporter.Page(offset,bytes,faces,layer,raw,codec,checksum);var previous=descriptors.putIfAbsent(offset,page);require(previous==null||previous.equals(page));pages.add(previous==null?page:previous);
                     }
                     levels.add(List.copyOf(pages));

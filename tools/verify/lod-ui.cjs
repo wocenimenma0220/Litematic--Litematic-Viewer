@@ -28,7 +28,7 @@ app.once('browser-window-created',(_event,win)=>{
     els.geometryBudget.value='32';await saveGeometryBudget();
     els.viewport.style.width=els.viewport.style.minWidth=els.viewport.style.maxWidth='640px';els.viewport.style.height=els.viewport.style.minHeight=els.viewport.style.maxHeight='384px';els.viewport.style.flex='0 0 auto';
     await loadFile(${JSON.stringify(path.join(fixtures,'small.litematic'))});
-    if(!state.viewReady||!state.view.stream)throw Error('actual application did not select LMESH5: '+els.log.textContent);
+    if(!state.viewReady||!state.view.stream)throw Error('actual application did not select streamed LMESH: '+els.log.textContent);
     await state.view.stream.settled();await new Promise(r=>setTimeout(r,350));
     if(!state.view.drawStats.visibleQuads||JSON.parse(lastViewKey)[0]!==state.view.revision)throw Error('completed chunks never redrew automatically: '+JSON.stringify({stats:state.view.drawStats,revision:state.view.revision,key:lastViewKey,viewFrame,visibility:document.visibilityState}));
     await window.shellApi.openPack();await window.shellApi.openPack('folder');
@@ -103,7 +103,7 @@ app.once('browser-window-created',(_event,win)=>{
     if([...stream.residents.values()].some(r=>r.pages.some(p=>p.layer!==4&&p.data)))throw Error('opaque CPU vertex arrays retained');
     if(state.view.gl.getError()!==0||state.view.gl.isContextLost())throw Error('streaming WebGL failure');
     return {initial,limited,expanded,pressure,near,far,final:stream.stats(),automaticRepaint:true,stableClicks:12,continuousDrag:true,flySelections:8,viewDistance:true,spawnInRange:true};`);
-   if(!sceneExports.some(e=>e.meshFormat==='LMESH5'&&e.fullMeshResident===false))throw Error('engine did not use bounded scene generation');
+   if(!sceneExports.some(e=>e.meshFormat==='LMESH7'&&e.fullMeshResident===false))throw Error('engine did not use bounded LMESH7 scene generation');
    progress('background preparation and zoom cache');
    const preloading=await run(`const stream=state.view.stream;els.geometryBudget.value='2048';await saveGeometryBudget();state.fly=true;state.flyPos=[160,8,8];applyViewDistance(1);drawView();await stream.settled();
     const mode=async value=>{els.preloadMode.value=value;els.preloadMode.dispatchEvent(new Event('change'));const end=Date.now()+5000;while((await window.appUi.settings()).preloadMode!==value){if(Date.now()>end)throw Error('preload mode did not persist');await new Promise(r=>setTimeout(r,10));}await new Promise(r=>setTimeout(r,25));};
@@ -126,7 +126,7 @@ app.once('browser-window-created',(_event,win)=>{
      if(maximum>.02||state.view.gl.getError())throw Error('special appearance differs between LOD and full GPU preview: '+maximum);const screenshot=els.gl.toDataURL();reference.disposeBuffers();reference.gl.deleteTexture(reference.texture);parent.remove();return {maximum,screenshot};`);
     fs.writeFileSync(path.join(out,name+'-gpu.png'),Buffer.from(pixels.screenshot.split(',')[1],'base64'));appearances.push({name,maximum: pixels.maximum});
    }
-   const result={pass:true,setup,comparison,controls,movement,preloading,appearances,streamedExports:sceneExports.filter(e=>e.meshFormat==='LMESH5').length};
+   const result={pass:true,setup,comparison,controls,movement,preloading,appearances,streamedExports:sceneExports.filter(e=>e.meshFormat==='LMESH7').length};
    fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));app.quit();
   }catch(error){restore();fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({pass:false,error:error.stack}));console.error(error);app.exit(1);}
  });

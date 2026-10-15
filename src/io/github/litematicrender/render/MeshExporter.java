@@ -53,7 +53,7 @@ public final class MeshExporter {
 
     private MeshExporter() {}
 
-    /** Indexed LMESH6 preview path; the LMESH1-5 readers remain available for existing files. */
+    /** Indexed LMESH7 preview path; the LMESH1-6 readers remain available for existing files. */
     public static StreamMeshExporter.Index writeStreaming(io.github.litematicrender.render.scene.SceneBuilder builder,SpriteAtlas atlas,Path out)throws IOException {
         return StreamMeshExporter.write(builder,atlas,out);
     }
