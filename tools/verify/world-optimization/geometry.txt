@@ -1,0 +1,7 @@
+baselineBuildMillis=1506.8987
+optimizedBuildMillis=426.497
+baselineTransparent=117849 optimizedTransparent=49735 sections=18
+view=45 changed=0 maxChannelError=0 channelsOver3=0 meanChannelError=0.0
+view=135 changed=0 maxChannelError=0 channelsOver3=0 meanChannelError=0.0
+view=225 changed=0 maxChannelError=0 channelsOver3=0 meanChannelError=0.0
+view=315 changed=0 maxChannelError=0 channelsOver3=0 meanChannelError=0.0

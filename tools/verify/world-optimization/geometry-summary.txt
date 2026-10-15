@@ -1,0 +1,1 @@
+baselineTransparent=117849 optimizedTransparent=49735 pixelDifferences=0 maxChannelError=0

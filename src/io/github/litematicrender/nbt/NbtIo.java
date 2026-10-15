@@ -15,6 +15,10 @@ public final class NbtIo {
 
     /** Reads an unnamed-root compound (the standard file format: type byte + root name + compound body). */
     public static NbtCompound readFile(DataInput input, long maxBytes) throws IOException {
+        return readFile(input, new NbtSizeTracker(maxBytes));
+    }
+
+    public static NbtCompound readFile(DataInput input, NbtSizeTracker tracker) throws IOException {
         byte type = input.readByte();
         if (type == NbtTypes.TAG_END) {
             return new NbtCompound();
@@ -23,7 +27,7 @@ public final class NbtIo {
             throw new IOException("Root tag is not a compound: " + NbtTypes.typeName(type));
         }
         input.readUTF(); // discard root name
-        return NbtCompound.read(input, 0, new NbtSizeTracker(maxBytes));
+        return NbtCompound.read(input, 0, tracker);
     }
 
     public static void writeFile(NbtCompound root, DataOutput output) throws IOException {

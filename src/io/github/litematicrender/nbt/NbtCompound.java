@@ -156,7 +156,9 @@ public final class NbtCompound extends NbtElement {
             if (tagType == NbtTypes.TAG_END) break;
             String key = input.readUTF();
             tracker.increment(2 + 2L * key.length());
-            NbtElement data = NbtElement.create(tagType, input, depth + 1, tracker);
+            NbtElement data = tracker.packedBlockStates && depth == 2 && key.equals("BlockStates") && tagType == NbtTypes.TAG_LONG_ARRAY
+                ? new NbtPackedLongArray(PackedLongArray.read(input, tracker))
+                : NbtElement.create(tagType, input, depth + 1, tracker);
             result.values.put(key, data);
         }
         return result;

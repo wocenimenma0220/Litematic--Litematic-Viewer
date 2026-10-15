@@ -36,10 +36,12 @@ class EngineClient {
   }
 
   start() {
+    this.stopping = null;
     return new Promise((resolve, reject) => {
       const args = [
         '-Xmx4g',
         '-Dfile.encoding=UTF-8',
+        '-Djava.net.useSystemProxies=true',
         `-Dlitematicrender.home=${this.opts.home}`,
         '-cp',
         this.opts.classpath,
@@ -136,6 +138,7 @@ class EngineClient {
 
   /** Queues a call; resolves with the engine's result object. */
   call(method, params) {
+    if(this.stopping)return Promise.reject(new Error('应用正在退出'));
     return new Promise((resolve, reject) => {
       this.queue.push({ method, params, resolve, reject });
       this._pump();
@@ -174,23 +177,19 @@ class EngineClient {
   }
 
   stop() {
+    if (this.stopping) return this.stopping;
     const proc = this.proc;
-    if (!proc) return;
-    try {
-      proc.stdin.write(JSON.stringify({ id: 0, method: 'shutdown', params: {} }) + '\n');
-      proc.stdin.end();
-    } catch {
-      /* already gone */
-    }
-    const killTimer = setTimeout(() => {
+    if (!proc || proc.exitCode !== null || proc.signalCode !== null) return Promise.resolve();
+    this.stopping = new Promise(resolve => {
+      const killTimer = setTimeout(() => { try { proc.kill(); } catch { /* already gone */ } }, 5000);
+      proc.once('exit', () => { clearTimeout(killTimer); resolve(); });
+      for(const job of this.queue.splice(0))job.reject(new Error('应用正在退出'));
       try {
-        proc.kill();
-      } catch {
-        /* ignore */
-      }
-    }, 1500);
-    proc.once('exit', () => clearTimeout(killTimer));
-    this.proc = null;
+        proc.stdin.write(JSON.stringify({ id: 0, method: 'cancelPreview', params: {} }) + '\n');
+        proc.stdin.end(JSON.stringify({ id: 0, method: 'shutdown', params: {} }) + '\n');
+      } catch { try { proc.kill(); } catch { /* already gone */ } }
+    });
+    return this.stopping;
   }
 
   getStderrTail() {

@@ -1,8 +1,9 @@
 {
   "name": "litematic-render-shell",
-  "version": "1.0.0",
+  "version": "1.0.17.6",
+  "productName": "投影预览",
   "private": true,
-  "description": "Litematic Render — desktop shell (Electron) over the Java render engine",
+  "description": "投影预览 — Minecraft Litematica 投影查看与导出",
   "main": "main.js",
   "type": "commonjs",
   "scripts": {

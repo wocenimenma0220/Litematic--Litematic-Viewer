@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; img-src 'self' data: file:; style-src 'self'; script-src 'self'; connect-src 'self' file:;" />
+  <title>投影预览</title>
+  <link rel="icon" href="../icon.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="titlebar">
+    <img class="brand-icon" src="../icon.png" alt="" />
+    <span class="appname">投影预览</span>
+    <nav class="menu">
+      <button class="menubtn" id="menuFile">文件</button>
+      <div class="dropdown hidden" id="menuFileDrop">
+        <button id="menuOpenSchematic">打开投影 (.litematic)…</button>
+        <button id="menuImportPack">导入材质包…</button>
+        <button id="menuImportPackFolder">导入材质包文件夹…</button>
+        <div class="menusep"></div>
+        <button id="menuMaterials" disabled>查看 / 导出材料清单…</button>
+        <button id="menuExportPng" disabled>导出 PNG…</button>
+        <button id="menuExportGif" disabled>导出动画 GIF…</button>
+        <div class="menusep"></div>
+        <button id="menuQuit">退出</button>
+      </div>
+    </nav>
+  </div>
+
+  <div class="app">
+    <div class="sidebar-shell" id="sidebarPanel">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <span class="dot"></span>
+        <div>
+          <h1>投影预览</h1>
+          <p id="engineStatus" class="muted">正在启动渲染引擎…</p>
+        </div>
+      </div>
+
+      <section class="group">
+        <h2>投影文件</h2>
+        <button id="btnOpen" class="primary">打开 .litematic…</button>
+        <div id="fileInfo" class="fileinfo hidden"></div>
+      </section>
+
+      <section class="group"><h2>投影材料</h2><button id="btnMaterials" disabled>查看 / 导出材料清单…</button></section>
+      <section class="group">
+        <h2>玩家头颅</h2>
+        <label class="check"><input id="skinOnline" type="checkbox" checked />允许联网获取皮肤</label>
+        <p class="muted small" id="skinInfo">优先使用本地缓存，获取失败时显示 Steve。</p>
+        <input class="skinplayer" id="skinPlayer" type="text" placeholder="玩家名或 UUID" aria-label="导入皮肤对应的玩家名或 UUID" />
+        <button id="skinImport">导入皮肤 PNG…</button>
+      </section>
+
+      <section class="group">
+        <h2>材质包</h2>
+        <p class="muted small">内置材质包可删除；导入包可调整顺序，越靠下优先级越高。</p>
+        <ul id="packList" class="packlist"></ul>
+      </section>
+
+      <section class="group">
+        <h2>预览渲染</h2>
+        <div class="field">
+          <label for="previewBackend">渲染方式</label>
+          <select id="previewBackend">
+            <option value="gpu" selected>GPU · 实时 3D</option>
+            <option value="cpu">CPU · 软件渲染</option>
+          </select>
+        </div>
+        <p class="muted small" id="previewBackendInfo">GPU 支持实时旋转、缩放和漫游。</p>
+        <label class="check"><input id="largeProjection" type="checkbox" />大投影渲染</label>
+        <p class="muted small">开启后先显示简化总览，再补齐完整材质；再次打开可复用磁盘缓存。</p>
+        <label class="check"><input id="lodPreview" type="checkbox" checked />按距离调整细节（LOD）</label>
+        <p class="muted small">大投影渲染开启时，近处保留完整细节；关闭 LOD 后区块始终使用完整精度。PNG / GIF 始终保持完整精度。</p>
+        <p class="muted small" id="streamInfo"></p>
+        <p class="muted small" id="pageReadInfo"></p>
+        <div class="field">
+          <label for="preloadMode">模型准备方式</label>
+          <select id="preloadMode">
+            <option value="distance">当前视距预渲染</option>
+            <option value="full">完整投影预渲染</option>
+            <option value="streaming" selected>边加载边渲染</option>
+          </select>
+        </div>
+        <button id="btnPreload" type="button" disabled>开始预渲染</button>
+        <p class="muted small" id="preloadInfo">随视角按需加载，缓存中的细节可重复使用。</p>
+        <p class="muted small">预渲染在后台准备完整细节，预览可同时操作。漫游时以相机为中心，轨道总览以投影中心为准。缓存不足会暂停，可提高上限后继续。</p>
+        <div class="field">
+          <label for="geometryBudget">预览几何缓存上限（MB）</label>
+          <input id="geometryBudget" type="number" min="32" max="16384" step="1" value="256" />
+        </div>
+        <p class="muted small">32–16384 MB，默认 256。修改后立即生效并保存，仅用于 LOD 预览；投影、光照和贴图另占内存。</p>
+        <div class="field">
+          <label for="viewDistance">漫游视距 <span id="viewDistanceVal" class="val">6 区块</span></label>
+          <div class="distance-controls">
+            <input id="viewDistance" type="range" min="1" max="128" step="1" value="6" />
+            <input id="viewDistanceNumber" type="number" min="1" max="128" step="1" value="6" aria-label="漫游视距（区块）" />
+          </div>
+        </div>
+        <p class="muted small">1–128 区块，默认 6；每区块宽 16 格。仅限制漫游中的水平范围，轨道总览与导出显示完整投影。</p>
+      </section>
+
+      <section class="group">
+        <h2>磁盘场景缓存</h2>
+        <div class="field"><label for="sceneCacheLimit">缓存限额（MB）</label><input id="sceneCacheLimit" type="number" min="0" max="131072" step="256" value="4096" /></div>
+        <p class="muted small">再次打开大投影时复用完整画面。0 为关闭；256–131072 MB。使用期间保留当前场景。</p>
+        <label class="check"><input id="clearCacheOnExit" type="checkbox" checked />关闭应用时清理渲染缓存</label>
+        <p class="muted small">默认开启；关闭后可在下次启动时复用场景缓存。</p>
+        <button id="sceneCacheClear">清理未使用缓存</button><p id="sceneCacheInfo" class="muted small"></p>
+      </section>
+      <section class="group">
+        <h2>光照</h2>
+        <div class="lighting-controls"><label class="check"><input id="lightingEnabled" type="checkbox" checked />开启光照渲染</label>
+        <label class="check"><input id="realLighting" type="checkbox" checked />平滑光照</label></div>
+        <p class="muted small">开启光照渲染后计算明暗；平滑光照让顶点之间自然过渡。关闭平滑光照使用明亮效果，关闭光照渲染直接显示材质。</p>
+      </section>
+
+      <section class="group">
+        <h2>视角</h2>
+        <div class="field">
+          <label for="rotation">水平旋转 <span id="rotationVal" class="val">45°</span></label>
+          <input type="range" id="rotation" min="0" max="360" step="1" value="45" />
+        </div>
+        <div class="field">
+          <label for="slant">俯仰角 <span id="slantVal" class="val">30°</span></label>
+          <input type="range" id="slant" min="-90" max="90" step="1" value="30" />
+        </div>
+        <div class="field">
+          <label for="zoom">缩放 <span id="zoomVal" class="val">1.00×</span></label>
+          <input type="range" id="zoom" min="0.05" max="20" step="0.05" value="1" />
+        </div>
+        <div class="presets">
+          <button data-preset="iso">等轴 45/35.264</button>
+          <button data-preset="dimetric">斜二测 45/30</button>
+          <button data-preset="front">正视 0/0</button>
+          <button data-preset="top">俯视 0/89</button>
+          <button data-preset="back">背视 180/0</button>
+          <button data-preset="left">左视 -90/0</button>
+        </div>
+        <p class="muted small">在预览区拖动即可旋转，滚轮缩放；按 V 进入漫游。</p>
+        <label class="check"><input id="showCoordinates" type="checkbox" />显示自身坐标</label>
+        <button id="btnFly">进入漫游 (V)</button>
+        <p id="flyHint" class="muted small hidden">
+          漫游中：<b>W/A/S/D</b> 移动，<b>空格</b> 上升，<b>Shift / C</b> 下降，<b>Ctrl</b> 加速；移动鼠标转视角，<b>左键</b>查看准星所指方块或实体，<b>Esc</b> 释放鼠标，<b>V</b> 退出。
+        </p>
+        <p id="flyMouseHint" class="muted small hidden"></p>
+      </section>
+
+      <section class="group">
+        <h2>输出</h2>
+        <div class="field">
+          <label for="size">分辨率</label>
+          <select id="size">
+            <option value="512">512 × 512</option>
+            <option value="1024" selected>1024 × 1024</option>
+            <option value="2048">2048 × 2048</option>
+            <option value="4096">4096 × 4096</option>
+          </select>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="transparent" checked />
+          <span>导出透明背景</span>
+        </label>
+        <p class="muted small">网格仅用于预览，导出时自动透明。</p>
+        <div class="field">
+          <label for="bg">背景色</label>
+          <input type="color" id="bg" value="#ffffff" />
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="btnRender" class="primary" disabled>重新渲染</button>
+        <button id="btnExport" disabled>导出 PNG…</button>
+      </div>
+
+      <p id="hint" class="muted small">先打开一个 .litematic 文件。</p>
+    </aside>
+    <button id="btnToggleSidebar" class="sidebar-toggle" aria-controls="sidebar" aria-expanded="true"
+            aria-label="收起左侧操作面板" title="收起左侧操作面板">‹</button>
+    </div>
+
+    <main class="stage">
+      <div class="toolbar">
+        <span id="stats" class="muted small">—</span>
+        <span class="spacer"></span>
+        <label class="check small">
+          背景
+          <select id="bgMode">
+            <option value="checker" selected>网格背景（导出透明）</option>
+            <option value="sky">游戏天空色</option>
+            <option value="white">白色</option>
+            <option value="dark">深灰</option>
+            <option value="color">自选背景色</option>
+            <option value="image" disabled>自定义图片</option>
+          </select>
+        </label>
+        <button id="btnImportBackground" class="toolbar-button" title="PNG / JPG，10 MB 以内">导入背景…</button>
+        <button id="btnFullscreen" class="toolbar-button" title="F11 切换全屏，Esc 退出">全屏 (F11)</button>
+      </div>
+      <div id="viewport" class="viewport checker" tabindex="-1">
+        <canvas id="gl" class="glcanvas"></canvas>
+        <div id="coordinates" class="coordinates hidden" aria-live="off"></div>
+        <img id="crosshair" src="crosshair.png" class="crosshair hidden" alt="" aria-hidden="true" draggable="false" />
+        <img id="preview" alt="渲染预览" class="hidden" />
+        <div id="placeholder" class="placeholder">还没有渲染结果</div>
+        <section id="blockInspector" class="block-inspector hidden" aria-label="方块或实体状态与容器内容">
+          <div class="inspector-header"><h2 id="inspectName"></h2><button id="inspectClose" aria-label="关闭状态面板" title="关闭">×</button></div>
+          <p id="inspectId" class="muted small"></p>
+          <p id="inspectPosition" class="small"></p>
+          <h3 id="inspectStateTitle">方块状态</h3><dl id="inspectProperties"></dl>
+          <div id="inspectInventory" class="hidden"><h3>容器内容</h3><p id="inspectInventoryStatus" class="muted small"></p><div id="inspectItems"></div></div>
+          <details id="inspectItemDetails" class="hidden"><summary id="inspectItemName">物品详情</summary><pre id="inspectItemData"></pre></details>
+          <details id="inspectDataDetails" class="hidden"><summary>更多保存的数据</summary><pre id="inspectData"></pre></details>
+        </section>
+        <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">渲染中…</span></div>
+      </div>
+      <div id="log" class="log"></div>
+    </main>
+  </div>
+  <dialog id="materialDialog" class="material-dialog" aria-labelledby="materialTitle">
+    <div class="material-header"><h2 id="materialTitle">投影材料清单</h2><button id="materialClose" aria-label="关闭材料清单">×</button></div>
+    <p id="materialSummary" class="muted small"></p>
+    <input id="materialSearch" type="search" placeholder="搜索物品名称或 ID" aria-label="搜索材料" />
+    <div class="material-lists"><section><div class="material-section-title"><h3>建材</h3><button id="materialConvertWater" title="把建材中的普通水桶按一桶水对应一块普通冰换算，导出同步采用换算结果">水桶换算为冰</button></div><div id="buildingMaterials" class="material-table"></div></section><section><div class="material-section-title"><h3>容器内容物</h3></div><div id="containerMaterials" class="material-table"></div></section></div>
+    <p id="materialConversion" class="muted small" hidden></p>
+    <p id="materialWarnings" class="muted small"></p>
+    <div class="material-export"><label>导出范围 <select id="materialScope"><option value="combined">两类合并到同一个文件</option><option value="separate">两类分别导出为两个文件</option><option value="building">仅导出建材</option><option value="contents">仅导出容器内容物</option></select></label><label>格式 <select id="materialFormat"><option value="xlsx" selected>XLSX（Excel）</option><option value="csv">CSV</option></select></label><button id="materialExport" class="primary">导出材料表…</button></div>
+    <p id="materialStatus" class="muted small" role="status"></p>
+  </dialog>
+  <dialog id="welcomeDialog" class="welcome-dialog" aria-labelledby="welcomeTitle">
+    <img class="welcome-icon" src="../icon.png" alt="投影预览图标" />
+    <h2 id="welcomeTitle">欢迎使用投影预览</h2>
+    <p>作者 kinda sus</p>
+    <p>喜欢的话支持一下作者吧</p>
+    <p><a id="authorLink" href="https://www.bilibili.com/video/BV1UT42167xb/?share_source=copy_web&amp;vd_source=d1e157c09b3321a7ecaf103abcde1586">网页链接</a></p>
+    <div class="welcome-actions">
+      <button id="welcomeClose">关闭</button>
+      <button id="welcomeNever" class="primary">后续不再显示</button>
+    </div>
+    <p id="welcomeError" class="welcome-error hidden" role="alert"></p>
+  </dialog>
+  <script src="gpu-view.js"></script>
+  <script src="lod-stream.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

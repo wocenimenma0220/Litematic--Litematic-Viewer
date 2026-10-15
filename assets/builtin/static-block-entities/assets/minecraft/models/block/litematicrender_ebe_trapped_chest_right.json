@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/litematicrender_ebe_template_chest_right",
+  "textures": {
+    "chest": "minecraft:entity/chest/trapped_right"
+  }
+}

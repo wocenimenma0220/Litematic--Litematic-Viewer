@@ -24,6 +24,6 @@ if not "%RC%"=="0" (
     pause
     exit /b 1
 )
-echo Done. Run "启动.bat" to start the app.
+echo Done. Double-click LitematicRender.exe in the project root to start the app.
 pause
 endlocal

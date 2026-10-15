@@ -124,6 +124,7 @@ public final class NbtScalars {
         @Override public String toString() { return "[" + this.value.length + " bytes]"; }
         static NbtByteArray read(DataInput in, NbtSizeTracker t) throws IOException {
             int len = in.readInt();
+            if(len<0)throw new IOException("NBT 字节数组长度为负数："+len);
             t.increment(4 + (long) len);
             byte[] data = new byte[len];
             in.readFully(data);
@@ -143,6 +144,7 @@ public final class NbtScalars {
         @Override public String toString() { return "[" + this.value.length + " ints]"; }
         static NbtIntArray read(DataInput in, NbtSizeTracker t) throws IOException {
             int len = in.readInt();
+            if(len<0)throw new IOException("NBT 整数数组长度为负数："+len);
             t.increment(4 + 4L * len);
             int[] data = new int[len];
             for (int i = 0; i < len; i++) data[i] = in.readInt();
@@ -162,6 +164,7 @@ public final class NbtScalars {
         @Override public String toString() { return "[" + this.value.length + " longs]"; }
         static NbtLongArray read(DataInput in, NbtSizeTracker t) throws IOException {
             int len = in.readInt();
+            if(len<0)throw new IOException("NBT 长整数数组长度为负数："+len);
             t.increment(4 + 8L * len);
             long[] data = new long[len];
             for (int i = 0; i < len; i++) data[i] = in.readLong();

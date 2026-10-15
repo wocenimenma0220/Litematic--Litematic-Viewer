@@ -17,27 +17,30 @@ import java.util.zip.GZIPInputStream;
 
 /**
  * File level helpers. Ported from malilib DataFileUtils:
- * GZIP with automatic fallback to uncompressed reads.
+ * Detect GZIP from its header. Parse failures must never trigger an uncompressed retry.
  */
 public final class NbtFileUtils {
     private NbtFileUtils() {}
 
     public static NbtCompound readCompressedOrRaw(Path file) throws IOException {
-        IOException lastError = null;
-        // 1) try gzip
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(new GZIPInputStream(Files.newInputStream(file))))) {
-            NbtCompound result = NbtIo.readFile(in, NbtSizeTracker.FILE_MAX_BYTES);
-            if (result != null) return result;
-        } catch (IOException e) {
-            lastError = e;
-        }
-        // 2) fall back to raw
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(Files.newInputStream(file)))) {
+        try (DataInputStream in = decoded(Files.newInputStream(file))) {
             return NbtIo.readFile(in, NbtSizeTracker.FILE_MAX_BYTES);
-        } catch (IOException e) {
-            if (lastError != null) e.addSuppressed(lastError);
-            throw e;
         }
+    }
+
+    public static NbtCompound readSchematic(Path file) throws IOException {
+        try(DataInputStream in=decoded(Files.newInputStream(file))){
+            return NbtIo.readFile(in,new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true));
+        }catch(IOException e){throw new IOException("无法读取投影“"+file.getFileName()+"”："+(e.getMessage()==null?"文件不完整或压缩数据损坏":e.getMessage()),e);}
+    }
+
+    private static DataInputStream decoded(InputStream raw) throws IOException {
+        var buffered=new BufferedInputStream(raw,65536);
+        try {
+            buffered.mark(2);int first=buffered.read(),second=buffered.read();buffered.reset();
+            InputStream content=first==0x1f&&second==0x8b?new GZIPInputStream(buffered,65536):buffered;
+            return new DataInputStream(new BufferedInputStream(content,65536));
+        }catch(IOException e){try{buffered.close();}catch(IOException close){e.addSuppressed(close);}throw e;}
     }
 
     public static NbtCompound readCompressed(Path file) throws IOException {
@@ -68,7 +71,7 @@ public final class NbtFileUtils {
 
     /** Stream variant used by zip-embedded schematics. */
     public static NbtCompound readCompressedOrRawStream(InputStream rawStream) throws IOException {
-        try (DataInputStream in = new DataInputStream(new BufferedInputStream(new GZIPInputStream(rawStream)))) {
+        try (DataInputStream in = decoded(rawStream)) {
             return NbtIo.readFile(in, NbtSizeTracker.FILE_MAX_BYTES);
         }
     }

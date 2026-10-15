@@ -1,5 +1,14 @@
 {
   "sources": [
+    {"type":"minecraft:directory","prefix":"entity/boat/","source":"entity/boat"},
+    {"type":"minecraft:directory","prefix":"entity/chest_boat/","source":"entity/chest_boat"},
+    {"type":"minecraft:directory","prefix":"entity/minecart/","source":"entity/minecart"},
+    {"type":"minecraft:directory","prefix":"entity/snow_golem/","source":"entity/snow_golem"},
+    {"type":"minecraft:directory","prefix":"entity/iron_golem/","source":"entity/iron_golem"},
+    {"type":"minecraft:directory","prefix":"entity/bell/","source":"entity/bell"},
+    {"type":"minecraft:directory","prefix":"entity/decorated_pot/","source":"entity/decorated_pot"},
+    {"type":"minecraft:directory","prefix":"entity/bed/","source":"entity/bed"},
+    {"type":"minecraft:single","resource":"minecraft:entity/player/wide/steve","sprite":"minecraft:entity/player/wide/steve"},
     {
       "type": "minecraft:directory",
       "prefix": "entity/chest/",

@@ -1,0 +1,20 @@
+{
+  "variants": {
+    "facing=north": {
+      "model": "minecraft:block/litematicrender_ebe_ender_chest_single",
+      "y": 0
+    },
+    "facing=east": {
+      "model": "minecraft:block/litematicrender_ebe_ender_chest_single",
+      "y": 90
+    },
+    "facing=south": {
+      "model": "minecraft:block/litematicrender_ebe_ender_chest_single",
+      "y": 180
+    },
+    "facing=west": {
+      "model": "minecraft:block/litematicrender_ebe_ender_chest_single",
+      "y": 270
+    }
+  }
+}

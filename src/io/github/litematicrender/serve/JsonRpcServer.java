@@ -70,6 +70,8 @@ public final class JsonRpcServer {
             }
         } catch (Exception e) {
             log("server loop ended: " + e);
+        } finally {
+            this.engine.close();
         }
     }
 
@@ -119,6 +121,13 @@ public final class JsonRpcServer {
                 return this.engine.open(Path.of(file));
             }
 
+            case "materials": return this.engine.materials(MiniJson.asBool(p.get("waterAsIce"),false));
+            case "exportMaterials": return this.engine.exportMaterials(Path.of(require(p,"out")),MiniJson.asString(p.get("scope"),"combined"),MiniJson.asBool(p.get("waterAsIce"),false));
+            case "skinSettings": return this.engine.skinSettings();
+            case "pickBlock": return this.engine.pickBlock(vector(p,"origin"),vector(p,"direction"),MiniJson.asDouble(p.get("maximum"),4096));
+            case "setSkinOnline": return this.engine.setSkinOnline(MiniJson.asBool(p.get("online"),true));
+            case "importSkin": return this.engine.importSkin(require(p,"identity"),Path.of(require(p,"path")));
+
             case "render": {
                 RenderSettings s = settingsFrom(p);
                 Path out = Path.of(require(p, "out"));
@@ -127,9 +136,11 @@ public final class JsonRpcServer {
             }
 
             case "renderPreview": {
+                if(MiniJson.asBool(p.get("force"),false))this.engine.invalidateScene();
                 // Renders to a temp PNG and returns the bytes inline so the UI can show it
                 // without another file round-trip.
                 RenderSettings s = settingsFrom(p);
+                s.previewZoom = (float)Math.max(.05,Math.min(20,MiniJson.asDouble(p.get("previewZoom"),1)));
                 Path tmp = java.nio.file.Files.createTempFile("litematic-preview", ".png");
                 try {
                     Map<String, Object> r = this.engine.render(tmp, s, false);
@@ -151,15 +162,26 @@ public final class JsonRpcServer {
             }
 
 
+            case "exportCachedScene": return this.engine.exportCachedStreamScene(MiniJson.asBool(p.get("force"),false),MiniJson.asBool(p.get("realLighting"),false),MiniJson.asBool(p.get("lightingEnabled"),true));
+            case "beginPreview": return this.engine.beginPreview(MiniJson.asBool(p.get("force"),false),MiniJson.asBool(p.get("realLighting"),false),MiniJson.asBool(p.get("lightingEnabled"),true));
+            case "previewStatus": return this.engine.previewStatus(require(p,"id"),MiniJson.asInt(p.get("after"),-1),MiniJson.asObject(p.get("view")));
+            case "previewLive": return this.engine.previewLive(require(p,"id"));
+            case "previewResult": return this.engine.previewResult(require(p,"id"),MiniJson.asBool(p.get("overview"),false));
+            case "cancelPreview": return this.engine.cancelPreview();
+            case "sceneCacheStats": return this.engine.sceneCacheStats();
+            case "configureSceneCache": return this.engine.configureSceneCache(MiniJson.asInt(p.get("limitMB"),4096),MiniJson.asBool(p.get("clear"),false));
             case "exportScene": {
                 Path atlasOut = Path.of(require(p, "atlas"));
                 Path meshOut = Path.of(require(p, "mesh"));
-                return this.engine.exportScene(atlasOut, meshOut);
+                if(MiniJson.asBool(p.get("streaming"),false))return this.engine.exportStreamScene(atlasOut,meshOut,MiniJson.asBool(p.get("force"),false),MiniJson.asBool(p.get("realLighting"),false),MiniJson.asBool(p.get("lightingEnabled"),true));
+                return this.engine.exportScene(atlasOut, meshOut, MiniJson.asBool(p.get("force"),false), MiniJson.asBool(p.get("realLighting"),false),MiniJson.asBool(p.get("lightingEnabled"),true));
             }
 
             case "cancel":
                 this.engine.cancel();
                 return Map.of("cancelled", true);
+            case "releaseStreaming":
+                this.engine.releaseStreaming();return Map.of("released",true);
 
             case "shutdown":
                 return SHUTDOWN;
@@ -169,19 +191,27 @@ public final class JsonRpcServer {
         }
     }
 
-    private static RenderSettings settingsFrom(Map<String, Object> p) {
+    private static RenderSettings settingsFrom(Map<String, Object> p) throws java.io.IOException {
         RenderSettings s = new RenderSettings();
         s.rotationDeg = (float) MiniJson.asDouble(p.get("rotation"), s.rotationDeg);
         s.slantDeg = (float) MiniJson.asDouble(p.get("slant"), s.slantDeg);
         s.width = MiniJson.asInt(p.get("width"), s.width);
         s.height = MiniJson.asInt(p.get("height"), s.height);
-        s.transparentBackground = MiniJson.asBool(p.get("transparent"), s.transparentBackground);
-        if (p.get("background") != null) {
+        s.backgroundMode = MiniJson.asString(p.get("backgroundMode"), "color");
+        s.transparentBackground = "checker".equals(s.backgroundMode)
+            || MiniJson.asBool(p.get("transparent"), p.get("background") == null && s.transparentBackground);
+        if (!s.transparentBackground && p.get("background") != null) {
             s.backgroundColor = MiniJson.asInt(p.get("background"), 0) | 0xFF000000;
-            s.transparentBackground = false;
         }
-        s.cullHiddenFaces = MiniJson.asBool(p.get("cullHiddenFaces"), s.cullHiddenFaces);
+        s.checkerSize = Math.max(1, MiniJson.asInt(p.get("checkerSize"), 20));
+        if (!s.transparentBackground && "image".equals(s.backgroundMode)) {
+            Path image = Path.of(require(p, "backgroundImage"));
+            if (java.nio.file.Files.size(image) > 10L*1024*1024) throw new java.io.IOException("背景图片不能超过 10 MB");
+            s.backgroundImage = io.github.litematicrender.render.Image.read(image);
+        }
         s.ambientShadeScale = (float) MiniJson.asDouble(p.get("ambientShadeScale"), s.ambientShadeScale);
+        s.lightingEnabled = MiniJson.asBool(p.get("lightingEnabled"),true);
+        s.realLighting = MiniJson.asBool(p.get("realLighting"),false);
         s.animationTick = MiniJson.asInt(p.get("tick"), s.animationTick);
         s.interactiveMaxEdge = MiniJson.asInt(p.get("interactive"), s.interactiveMaxEdge);
         return s;
@@ -191,6 +221,13 @@ public final class JsonRpcServer {
         String v = MiniJson.asString(p.get(key), null);
         if (v == null) throw new IllegalArgumentException("missing parameter: " + key);
         return v;
+    }
+    private static double[] vector(Map<String,Object> p,String key) {
+        var list=MiniJson.asArray(p.get(key));
+        if(list==null||list.size()!=3)throw new IllegalArgumentException("无效的点选参数："+key);
+        double[] result=new double[3];
+        for(int i=0;i<3;i++){if(!(list.get(i) instanceof Number number))throw new IllegalArgumentException("点选坐标必须为数字");result[i]=number.doubleValue();}
+        return result;
     }
 
     // ------------------------------------------------------------------

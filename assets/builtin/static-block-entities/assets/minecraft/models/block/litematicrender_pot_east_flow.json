@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/litematicrender_ebe_template_pottery_pattern_east",
+  "textures": {
+    "pattern": "minecraft:entity/decorated_pot/flow_pottery_pattern"
+  }
+}

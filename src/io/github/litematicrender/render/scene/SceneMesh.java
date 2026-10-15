@@ -4,30 +4,21 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Collects renderable quads from the schematic into layers with baked shading inputs.
- *
- * <p>The layer set and their draw order follow quickcraft's {@code LayerKey}, which mirrors
- * Minecraft's terrain buckets:
- *
- * <pre>
- *   SOLID -> CUTOUT_MIPPED -> CUTOUT -> TRIPWIRE -> PORTAL -> FLUID -> TRANSLUCENT
- * </pre>
- *
- * <p>Two of these matter more than the rest: <strong>FLUID and TRANSLUCENT are separate</strong>,
- * so water draws before glass rather than being sorted into the same pool as it — that split is
- * quickcraft's v17 fix for "glass occluding portals and fluid tearing". And the translucent layers
- * are depth-tested but each is sorted on its own, because without an order-independent transparency
- * pass (which 26.x has, and a CPU rasteriser cannot afford) one pool of mixed glass and water can
- * never be ordered correctly for every viewpoint.
+ * Geometry grouped by material. Opaque layers write depth; all blending layers are sorted together.
  */
 public final class SceneMesh {
-    public enum Layer { SOLID, CUTOUT, PORTAL, FLUID, TRANSLUCENT }
+    public SectionVisibility visibility;
+    public java.util.Map<String, Object> skinReport = java.util.Map.of();
+    public java.util.Map<String, Object> entityReport = java.util.Map.of();
+    public enum Layer { SOLID, CUTOUT, PORTAL, FLUID, TRANSLUCENT, WATER_MASK }
 
     public static final class MeshQuad {
         public final float x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3; // world coords
         /** per-vertex uv fractions within the sprite (0..1) */
         public final float u0, v0, u1, v1, u2, v2, u3, v3;
         public final String spriteId;
+        /** Visual effects do not enlarge automatic framing or intercept block selection. */
+        public boolean decorativeEffect(){return spriteId!=null&&spriteId.startsWith("litematicrender:beacon/");}
         public final int rgb;              // used when spriteId == null
         /** When set, the quad samples this image directly (UV in [0,1]) instead of the atlas. */
         public final io.github.litematicrender.render.Image image;
@@ -36,6 +27,9 @@ public final class SceneMesh {
         public final float shade;
         /** per-vertex ambient occlusion, or null for flat (unculled / AO-disabled) quads */
         public final float[] ao;
+        /** Optional final per-corner RGB, including smooth light, tint, cardinal shade and AO. */
+        public int[] vertexColors;
+        public MeshQuad colors(int[] colors) { this.vertexColors=colors; return this; }
         public final Layer layer;
         public final float cx, cy, cz;     // center (for depth sorting)
         /**
@@ -45,6 +39,16 @@ public final class SceneMesh {
          * otherwise half of a cross plane disappears.
          */
         public final boolean doubleSided;
+        /** Owning cell/region, independent of geometry extending outside its cell. */
+        public int blockX, blockY, blockZ;
+        /** Thin boundaries must retain their geometry in distant LODs. */
+        public boolean lodProtected;
+        public String regionName;
+        public int entityIndex=-1;
+        public MeshQuad entityOwner(int index,String region){this.entityIndex=index;this.regionName=region;return this;}
+        public MeshQuad owner(int x,int y,int z,String region) {
+            this.blockX=x; this.blockY=y; this.blockZ=z; this.regionName=region; return this;
+        }
 
         public MeshQuad(float[] xs, float[] ys, float[] zs,
                         float u0, float v0, float u1, float v1, float u2, float v2, float u3, float v3,
@@ -93,7 +97,10 @@ public final class SceneMesh {
     public final List<MeshQuad> portal = new ArrayList<>();
     public final List<MeshQuad> fluid = new ArrayList<>();
     public final List<MeshQuad> translucent = new ArrayList<>();
+    /** Boat interior depth, written after visible opaque entities and before blending. */
+    public final List<MeshQuad> waterMask = new ArrayList<>();
     public int quadCount;
+    public TranslucentBsp translucentBsp;
 
     /**
      * The blending buckets with each quad already subdivided into sortable pieces.

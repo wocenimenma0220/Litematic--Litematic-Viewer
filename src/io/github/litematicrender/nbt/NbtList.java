@@ -95,6 +95,7 @@ public final class NbtList extends NbtElement {
         }
         int elementType = input.readUnsignedByte();
         int length = input.readInt();
+        if(length<0)throw new IOException("NBT 列表长度为负数："+length);
         tracker.increment(5L);
         if (length <= 0 || elementType == NbtTypes.TAG_END) {
             return new NbtList();

@@ -1,0 +1,130 @@
+{
+  "pass": true,
+  "fixtures": [
+    {
+      "mode": 0,
+      "views": 20,
+      "pixelsEqual": true,
+      "noUintFallback": true,
+      "minimumVisibleRatio": 0.185551008889516,
+      "details": [
+        {
+          "before": 19434,
+          "after": 7890
+        },
+        {
+          "before": 2630,
+          "after": 2630
+        },
+        {
+          "before": 22064,
+          "after": 10520
+        },
+        {
+          "before": 22064,
+          "after": 10520
+        }
+      ]
+    },
+    {
+      "mode": 1,
+      "views": 20,
+      "pixelsEqual": true,
+      "noUintFallback": true,
+      "minimumVisibleRatio": 0.3336416184971098,
+      "details": [
+        {
+          "before": 19402,
+          "after": 19402
+        },
+        {
+          "before": 2630,
+          "after": 2630
+        },
+        {
+          "before": 22032,
+          "after": 22032
+        },
+        {
+          "before": 22032,
+          "after": 22032
+        }
+      ]
+    },
+    {
+      "mode": 2,
+      "views": 20,
+      "pixelsEqual": true,
+      "noUintFallback": true,
+      "minimumVisibleRatio": 0.3336416184971098,
+      "details": [
+        {
+          "before": 19466,
+          "after": 19466
+        },
+        {
+          "before": 2630,
+          "after": 2630
+        },
+        {
+          "before": 22096,
+          "after": 22096
+        },
+        {
+          "before": 22096,
+          "after": 22096
+        }
+      ]
+    },
+    {
+      "mode": 3,
+      "views": 20,
+      "pixelsEqual": true,
+      "noUintFallback": true,
+      "minimumVisibleRatio": 0.185551008889516,
+      "details": [
+        {
+          "before": 19434,
+          "after": 7890
+        },
+        {
+          "before": 2630,
+          "after": 2630
+        },
+        {
+          "before": 22064,
+          "after": 10520
+        },
+        {
+          "before": 22064,
+          "after": 10520
+        }
+      ]
+    },
+    {
+      "mode": "reference",
+      "views": 24,
+      "pixelsEqual": true,
+      "noUintFallback": true,
+      "minimumVisibleRatio": 1,
+      "details": [
+        {
+          "before": 110802,
+          "after": 110802
+        },
+        {
+          "before": 68956,
+          "after": 68956
+        },
+        {
+          "before": 108336,
+          "after": 108336
+        },
+        {
+          "before": 88879,
+          "after": 88879
+        }
+      ]
+    }
+  ]
+}

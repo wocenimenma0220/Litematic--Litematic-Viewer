@@ -15,6 +15,7 @@ public final class Rasterizer {
     public final float[] depth;   // view-space depth per pixel, larger = closer
     public final Camera camera;
     private final SpriteAtlas atlas;
+    public boolean writeColor=true;
 
     public Rasterizer(int width, int height, Camera camera, SpriteAtlas atlas) {
         this.color = new Image(width, height);
@@ -29,10 +30,10 @@ public final class Rasterizer {
         java.util.Arrays.fill(this.depth, Float.NEGATIVE_INFINITY);
     }
 
-    private static final double[] V0 = new double[3];
-    private static final double[] V1 = new double[3];
-    private static final double[] V2 = new double[3];
-    private static final double[] V3 = new double[3];
+    private final double[] V0 = new double[3];
+    private final double[] V1 = new double[3];
+    private final double[] V2 = new double[3];
+    private final double[] V3 = new double[3];
 
     /**
      * Rasterizes one world-space quad.
@@ -89,6 +90,14 @@ public final class Rasterizer {
                          float u0, float v0, float u1, float v1, float u2, float v2, float u3, float v3,
                          String spriteId, int rgb, Image direct, float tintR, float tintG, float tintB,
                          float shade, float[] ao, boolean translucent, boolean doubleSided) {
+        drawQuad(wx0,wy0,wz0,wx1,wy1,wz1,wx2,wy2,wz2,wx3,wy3,wz3,
+            u0,v0,u1,v1,u2,v2,u3,v3,spriteId,rgb,direct,tintR,tintG,tintB,shade,ao,translucent,doubleSided,null);
+    }
+    public void drawQuad(double wx0,double wy0,double wz0,double wx1,double wy1,double wz1,
+            double wx2,double wy2,double wz2,double wx3,double wy3,double wz3,
+            float u0,float v0,float u1,float v1,float u2,float v2,float u3,float v3,
+            String spriteId,int rgb,Image direct,float tintR,float tintG,float tintB,
+            float shade,float[] ao,boolean translucent,boolean doubleSided,int[] vertexColors) {
         Camera cam = this.camera;
         cam.toView(wx0, wy0, wz0, V0);
         cam.toView(wx1, wy1, wz1, V1);
@@ -122,7 +131,8 @@ public final class Rasterizer {
 
         double d1 = (sy1 - sy2) * (sx0 - sx2) + (sx2 - sx1) * (sy0 - sy2);
         double d2 = (sy2 - sy3) * (sx0 - sx3) + (sx3 - sx2) * (sy0 - sy3);
-        if (Math.abs(d1) < 1e-9 || Math.abs(d2) < 1e-9) return;
+        boolean triangle1=Math.abs(d1)>=1e-9,triangle2=Math.abs(d2)>=1e-9;
+        if (!triangle1 && !triangle2) return;
 
         // Back-face culling: a quad whose projected winding faces away from the camera cannot
         // contribute a pixel. Vanilla enables this for terrain (MC 26.3's TERRAIN_SNIPPET keeps the
@@ -143,16 +153,19 @@ public final class Rasterizer {
                 double pxs = x + 0.5, pys = y + 0.5;
                 double uFrac, vFrac, vz;
                 float vShade;
+                double weight0,weight1,weight2;int corner1,corner2;
                 // tri (p0,p1,p2)
                 double l0 = ((sy1 - sy2) * (pxs - sx2) + (sx2 - sx1) * (pys - sy2)) / d1;
                 double l1 = ((sy2 - sy0) * (pxs - sx2) + (sx0 - sx2) * (pys - sy2)) / d1;
                 double l2 = 1 - l0 - l1;
-                if (l0 >= -1e-7 && l1 >= -1e-7 && l2 >= -1e-7) {
+                if (triangle1 && l0 >= -1e-7 && l1 >= -1e-7 && l2 >= -1e-7) {
                     uFrac = l0 * u0 + l1 * u1 + l2 * u2;
                     vFrac = l0 * v0 + l1 * v1 + l2 * v2;
                     vz = l0 * V0[2] + l1 * V1[2] + l2 * V2[2];
                     vShade = ao == null ? shade : (float) (l0 * ao[0] + l1 * ao[1] + l2 * ao[2]) * shade;
+                    weight0=l0;weight1=l1;weight2=l2;corner1=1;corner2=2;
                 } else {
+                    if(!triangle2)continue;
                     double m0 = ((sy2 - sy3) * (pxs - sx3) + (sx3 - sx2) * (pys - sy3)) / d2;
                     double m1 = ((sy3 - sy0) * (pxs - sx3) + (sx0 - sx3) * (pys - sy3)) / d2;
                     double m2 = 1 - m0 - m1;
@@ -161,12 +174,20 @@ public final class Rasterizer {
                     vFrac = m0 * v0 + m1 * v2 + m2 * v3;
                     vz = m0 * V0[2] + m1 * V2[2] + m2 * V3[2];
                     vShade = ao == null ? shade : (float) (m0 * ao[0] + m1 * ao[2] + m2 * ao[3]) * shade;
+                    weight0=m0;weight1=m1;weight2=m2;corner1=2;corner2=3;
                 }
                 if (vShade > 1f) vShade = 1f; else if (vShade < 0f) vShade = 0f;
                 uFrac = Math.min(0.9999f, Math.max(0f, uFrac));
                 vFrac = Math.min(0.9999f, Math.max(0f, vFrac));
 
                 int argb;
+                float cr=tintR*vShade,cg=tintG*vShade,cb=tintB*vShade;
+                if(vertexColors!=null) {
+                    int c0=vertexColors[0],c1=vertexColors[corner1],c2=vertexColors[corner2];
+                    cr=(float)((Image.red(c0)*weight0+Image.red(c1)*weight1+Image.red(c2)*weight2)/255);
+                    cg=(float)((Image.green(c0)*weight0+Image.green(c1)*weight1+Image.green(c2)*weight2)/255);
+                    cb=(float)((Image.blue(c0)*weight0+Image.blue(c1)*weight1+Image.blue(c2)*weight2)/255);
+                }
                 if (atlasImg != null) {
                     int tx, ty;
                     if (entry == null) {
@@ -174,17 +195,17 @@ public final class Rasterizer {
                         tx = Math.min(atlasImg.width - 1, Math.max(0, (int) ((float) uFrac * atlasImg.width)));
                         ty = Math.min(atlasImg.height - 1, Math.max(0, (int) ((float) vFrac * atlasImg.height)));
                     } else {
-                        float su = entry.u0 + (entry.u1 - entry.u0) * (float) uFrac;
-                        float sv = entry.v0 + (entry.v1 - entry.v0) * (float) vFrac;
-                        tx = Math.min(atlasImg.width - 1, Math.max(0, (int) (su * atlasImg.width)));
-                        ty = Math.min(atlasImg.height - 1, Math.max(0, (int) (sv * atlasImg.height)));
+                        // Keep sampling in sprite pixel space. Normalised float atlas UVs can round
+                        // a texture-edge sample differently after unrelated generated tiles move.
+                        tx = entry.pixelX + Math.min(entry.contents.frameWidth-1,Math.max(0,(int)(uFrac*entry.contents.frameWidth)));
+                        ty = entry.pixelY + Math.min(entry.contents.frameHeight-1,Math.max(0,(int)(vFrac*entry.contents.frameHeight)));
                     }
                     int texel = atlasImg.pixel(tx, ty);
                     int ta = Image.alpha(texel);
                     if (ta == 0) continue;   // fully transparent: no write, no depth
-                    int tr = clamp255(Image.red(texel) * tintR * vShade);
-                    int tg = clamp255(Image.green(texel) * tintG * vShade);
-                    int tb = clamp255(Image.blue(texel) * tintB * vShade);
+                    int tr = clamp255(Image.red(texel) * cr);
+                    int tg = clamp255(Image.green(texel) * cg);
+                    int tb = clamp255(Image.blue(texel) * cb);
                     argb = Image.argb(ta, tr, tg, tb);
                 } else {
                     int tr = clamp255(Image.red(rgb) * vShade);
@@ -195,11 +216,12 @@ public final class Rasterizer {
 
                 int idx = y * w + x;
                 int srcA = argb >>> 24;
-                if (srcA == 255) {
+                if (!translucent) {
+                    if (srcA < 26) continue;
                     float dVal = (float) vz;
                     if (dVal >= dep[idx]) {
                         dep[idx] = dVal;
-                        px[idx] = argb;
+                        if(writeColor)px[idx] = argb;
                     }
                 } else {
                     // Translucent geometry, matching how quickcraft draws its translucent layers

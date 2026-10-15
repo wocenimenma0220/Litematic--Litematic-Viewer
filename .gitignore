@@ -3,12 +3,55 @@ bin/
 dist/
 renders/
 runtime/
+skins/
+settings/
+cache/
+tools/verify/cache-output/
+tools/verify/cache-policy-output/
+tools/verify/cache-geometry-output/
+tools/verify/cache-large-output/
+tools/verify/preview-test-scenes/
 
 # Bundled toolchain (a full Node distribution, ~90 MB) — fetched, not authored here.
-tools/
+tools/node/
+tools/launcher/bin/
+tools/verify/output/
+tools/verify/entity-output/
+tools/verify/skin-output/
+tools/verify/ui-output/
+tools/verify/optimization-output/
+tools/verify/special-output/
+tools/verify/fly-output/
+tools/verify/saved-entity-output/
+tools/verify/lighting-optional/
+tools/verify/inspection-look-output/
+tools/verify/large-mesh-output/
+tools/verify/preview-backend-output/
+tools/verify/lod-output/
+tools/verify/lod-large-output/
+
+# Generated verification artifacts and profiling captures
+tools/verify/*-output/
+tools/verify/litetool-analysis/artifacts/
+tools/verify/world-render-profile/current/
+tools/verify/world-render-profile/direct-bsp/
+tools/verify/world-render-profile/frame-electron/
+tools/verify/world-optimization/baseline/
+tools/verify/world-optimization/baseline-classes/
+tools/verify/world-optimization/classes/
+tools/verify/world-optimization/export/
+tools/verify/world-optimization/frame-electron/
+tools/verify/world-optimization/inspection-electron/
+tools/verify/world-optimization/lighting/
+tools/verify/world-optimization/occlusion-electron/
+tools/verify/world-optimization/rooms/
+tools/verify/world-optimization/ui/
+tools/verify/world-optimization/*.bin
+tools/verify/world-optimization/*.png
 
 # Electron payload and its node_modules
 webapp/node_modules/
+**/node_modules/
 
 # Bundled Minecraft assets and third-party resource packs: large and not ours to version.
 # The atlas overlay we author (assets/builtin/block-entity-textures) is kept, see the negation.

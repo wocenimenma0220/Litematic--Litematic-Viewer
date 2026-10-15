@@ -1,0 +1,128 @@
+{
+  "current": {
+    "quads": 252110,
+    "transparentQuads": 117849,
+    "bspNodes": 9590,
+    "uploadMillis": 2887.2000000476837,
+    "renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "results": {
+      "orbit": {
+        "sampledFrames": 30,
+        "submitMean": 1.043333347638448,
+        "completeMean": 10.460000014305114,
+        "completeP95": 13,
+        "sortMean": 0.7866666793823243,
+        "cullMean": 0.033333317438761396,
+        "indexUploadMiB": 0.17982330322265624,
+        "sortCalls": 2,
+        "visibleMin": 252110,
+        "visibleMax": 252110,
+        "centerPixel": [
+          136,
+          101,
+          57,
+          255
+        ]
+      },
+      "fly": {
+        "sampledFrames": 30,
+        "submitMean": 1.0266666571299234,
+        "completeMean": 4.519999980926514,
+        "completeP95": 6.900000095367432,
+        "sortMean": 0.600000015894572,
+        "cullMean": 0.21999998092651368,
+        "indexUploadMiB": 0.2619804382324219,
+        "sortCalls": 6,
+        "visibleMin": 93073,
+        "visibleMax": 144605,
+        "centerPixel": [
+          177,
+          174,
+          172,
+          255
+        ]
+      },
+      "fly-fixed": {
+        "sampledFrames": 30,
+        "submitMean": 0.5366666555404663,
+        "completeMean": 4.779999979337057,
+        "completeP95": 7.299999952316284,
+        "sortMean": 0.31333332856496177,
+        "cullMean": 0.020000004768371583,
+        "indexUploadMiB": 0,
+        "sortCalls": 0,
+        "visibleMin": 153467,
+        "visibleMax": 153467,
+        "centerPixel": [
+          172,
+          169,
+          168,
+          255
+        ]
+      }
+    }
+  },
+  "direct-bsp": {
+    "quads": 165852,
+    "transparentQuads": 31591,
+    "bspNodes": 7215,
+    "uploadMillis": 2403.5,
+    "renderer": "ANGLE (Intel, Intel(R) Arc(TM) Graphics (0x00007D55) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+    "results": {
+      "orbit": {
+        "sampledFrames": 30,
+        "submitMean": 0.5099999745686848,
+        "completeMean": 8.633333301544189,
+        "completeP95": 10,
+        "sortMean": 0.30333335399627687,
+        "cullMean": 0.0066666682561238606,
+        "indexUploadMiB": 0.04820404052734375,
+        "sortCalls": 2,
+        "visibleMin": 165852,
+        "visibleMax": 165852,
+        "centerPixel": [
+          136,
+          101,
+          57,
+          255
+        ]
+      },
+      "fly": {
+        "sampledFrames": 30,
+        "submitMean": 0.6200000206629436,
+        "completeMean": 3.3800000190734862,
+        "completeP95": 5,
+        "sortMean": 0.38999998569488525,
+        "cullMean": 0.08666667938232422,
+        "indexUploadMiB": 0.071234130859375,
+        "sortCalls": 6,
+        "visibleMin": 59602,
+        "visibleMax": 94795,
+        "centerPixel": [
+          177,
+          174,
+          172,
+          255
+        ]
+      },
+      "fly-fixed": {
+        "sampledFrames": 30,
+        "submitMean": 0.49666667779286705,
+        "completeMean": 3.406666660308838,
+        "completeP95": 3.5999999046325684,
+        "sortMean": 0.29666666984558104,
+        "cullMean": 0.013333328564961751,
+        "indexUploadMiB": 0,
+        "sortCalls": 0,
+        "visibleMin": 99944,
+        "visibleMax": 99944,
+        "centerPixel": [
+          172,
+          169,
+          168,
+          255
+        ]
+      }
+    }
+  }
+}

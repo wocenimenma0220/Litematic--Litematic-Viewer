@@ -51,6 +51,47 @@ public final class SpriteContents {
     }
 
     /**
+     * Vanilla {@code SpriteContents.computeTransparency(minU, minV, maxU, maxV)}: classifies only
+     * the region of the sheet a face's UV rectangle actually samples.
+     *
+     * <p>The distinction is not academic. {@code force_translucent} is a per-<em>material</em> flag,
+     * so {@code redstone_dust_overlay} — whose own pixels are hard-edged — is baked translucent when
+     * a face reaches it through a translucent slot. But a face whose UV covers only an opaque part
+     * of a mostly transparent sheet comes back {@code NONE} — solid — and that is how a texture that
+     * is transparent <em>somewhere</em> still ends up in the SOLID layer. Classifying the whole
+     * sprite instead sends those faces to CUTOUT, where they neither write depth the way the game's
+     * solid geometry does nor blend, and where the terrain shader's alpha cutoff can erase them.
+     *
+     * @param minU,minV,maxU,maxV sprite-relative UV bounds in 0..1 (either corner order)
+     */
+    public Transparency transparencyIn(float minU, float minV, float maxU, float maxV) {
+        int x0 = (int) Math.floor(Math.max(0f, Math.min(minU, maxU)) * this.frameWidth);
+        int y0 = (int) Math.floor(Math.max(0f, Math.min(minV, maxV)) * this.frameHeight);
+        int x1 = (int) Math.ceil(Math.min(1f, Math.max(minU, maxU)) * this.frameWidth);
+        int y1 = (int) Math.ceil(Math.min(1f, Math.max(minV, maxV)) * this.frameHeight);
+        x0 = Math.max(0, Math.min(this.frameWidth - 1, x0));
+        y0 = Math.max(0, Math.min(this.frameHeight - 1, y0));
+        x1 = Math.max(x0 + 1, Math.min(this.frameWidth, x1));
+        y1 = Math.max(y0 + 1, Math.min(this.frameHeight, y1));
+
+        boolean transparent = false, translucent = false;
+        // Vanilla scans the animation frames in play order; the whole sheet is the honest superset
+        // here and costs nothing extra, since a still sprite's sheet is exactly its one frame.
+        for (int y = 0; y < this.sheet.height; y++) {
+            if (y % this.frameHeight < y0 || y % this.frameHeight >= y1) continue;
+            for (int x = 0; x < this.sheet.width; x++) {
+                if (x % this.frameWidth < x0 || x % this.frameWidth >= x1) continue;
+                int a = Image.alpha(this.sheet.pixel(x, y));
+                if (a == 0) transparent = true;
+                else if (a != 255) translucent = true;
+                if (transparent && translucent) return Transparency.TRANSPARENT_AND_TRANSLUCENT;
+            }
+        }
+        if (transparent) return Transparency.TRANSPARENT;
+        return translucent ? Transparency.TRANSLUCENT : Transparency.NONE;
+    }
+
+    /**
      * Which source frame is shown at a given game tick.
      *
      * <p>Vanilla advances one step in the {@code frames} list every {@code frametime} ticks, wrapping

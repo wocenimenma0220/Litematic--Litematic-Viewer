@@ -5,7 +5,6 @@ import io.github.litematicrender.render.raster.Camera;
 import io.github.litematicrender.render.raster.Rasterizer;
 import io.github.litematicrender.render.scene.SceneBuilder;
 import io.github.litematicrender.render.scene.SceneMesh;
-import io.github.litematicrender.resource.ResourceManager;
 import io.github.litematicrender.schematic.LitematicaSchematic;
 import io.github.litematicrender.world.BlockRegistry;
 
@@ -32,6 +31,9 @@ public final class SchematicRenderer {
         cam.rotationDeg = settings.rotationDeg;
         cam.slantDeg = settings.slantDeg;
         fitCameraToMesh(cam, mesh, settings.width, settings.height);
+        cam.zoom *= settings.previewZoom;
+        cam.offsetX *= settings.previewZoom;
+        cam.offsetY *= settings.previewZoom;
         cam.update();
         return rasterizeWithCamera(mesh, atlas, settings, cam);
     }
@@ -42,13 +44,25 @@ public final class SchematicRenderer {
                                Colormaps colormaps,
                                SpriteAtlas atlas,
                                RenderSettings settings) {
-        SceneBuilder builder = new SceneBuilder(registry, baker, colormaps, atlas);
+        return render(schematic,buildScene(schematic,baker,registry,colormaps,atlas,settings.realLighting,settings.lightingEnabled),colormaps,atlas,settings);
+    }
+
+    public static SceneMesh buildScene(LitematicaSchematic schematic, ModelBaker baker,
+                                      BlockRegistry registry, Colormaps colormaps, SpriteAtlas atlas) {
+        return buildScene(schematic,baker,registry,colormaps,atlas,false);
+    }
+
+    public static SceneMesh buildScene(LitematicaSchematic schematic, ModelBaker baker,
+                                      BlockRegistry registry, Colormaps colormaps, SpriteAtlas atlas, boolean realLighting) {
+        return buildScene(schematic,baker,registry,colormaps,atlas,realLighting,true);
+    }
+    public static SceneMesh buildScene(LitematicaSchematic schematic,ModelBaker baker,BlockRegistry registry,Colormaps colormaps,SpriteAtlas atlas,boolean realLighting,boolean lightingEnabled) {
+        SceneBuilder builder = new SceneBuilder(registry, baker, colormaps, atlas).realLighting(realLighting).lightingEnabled(lightingEnabled);
         for (var e : schematic.regions().entrySet()) {
             var r = e.getValue();
-            builder.addRegion(r, new int[]{r.position.x(), r.position.y(), r.position.z()});
+            var origin=r.blockOrigin();builder.addRegion(r, new int[]{origin.x(),origin.y(),origin.z()});
         }
-        SceneMesh mesh = builder.build();
-        return render(schematic, mesh, colormaps, atlas, settings);
+        return builder.build();
     }
 
     /**
@@ -72,7 +86,13 @@ public final class SchematicRenderer {
             Math.max(1, (int) Math.round(settings.height * f)));
         s.transparentBackground = settings.transparentBackground;
         s.backgroundColor = settings.backgroundColor;
+        s.backgroundMode = settings.backgroundMode;
+        s.backgroundImage = settings.backgroundImage;
+        s.checkerSize = settings.checkerSize;
         s.ambientShadeScale = settings.ambientShadeScale;
+        s.realLighting = settings.realLighting;
+        s.lightingEnabled = settings.lightingEnabled;
+        s.previewZoom = settings.previewZoom;
         s.animationTick = settings.animationTick;
         return s;
     }
@@ -84,22 +104,26 @@ public final class SchematicRenderer {
         atlas.rebakeAtTick(settings.animationTick);
 
         Rasterizer raster = new Rasterizer(settings.width, settings.height, cam, atlas);
-        raster.clear(settings.transparentBackground ? 0 : (settings.backgroundColor | 0xFF000000));
+        raster.clear(RenderBackground.isTransparent(settings) ? 0 : (settings.backgroundColor | 0xFF000000));
+        RenderBackground.fill(raster.color, settings);
 
         // Opaque passes first (depth-tested, order independent). Cutout writes depth for its opaque
         // texels, which is what hides translucent geometry behind a solid wall.
         for (SceneMesh.MeshQuad q : mesh.solid) draw(raster, q, settings, false);
         for (SceneMesh.MeshQuad q : mesh.cutout) draw(raster, q, settings, false);
+        raster.writeColor=false;
+        for(SceneMesh.MeshQuad q:mesh.waterMask)draw(raster,q,settings,false);
+        raster.writeColor=true;
 
-        // Then the blending passes, in quickcraft's DRAW_ORDER: PORTAL, FLUID, TRANSLUCENT.
-        //
-        // Each translucent bucket is sorted back-to-front on its own and drawn with a depth test
-        // but no depth writes. Buckets stay separate — mixing water and glass into one pool makes
-        // the order depend on the viewpoint, which is why glass would otherwise swallow water.
-        // Large quads are subdivided first so per-quad ordering holds where surfaces cross.
-        drawSorted(raster, mesh.portalSorted, cam, settings);
-        drawSorted(raster, mesh.fluidSorted, cam, settings);
-        drawSorted(raster, mesh.translucentSorted, cam, settings);
+        // Sort all blending materials together; fixed material passes reverse the order at some angles.
+        if(mesh.translucentBsp!=null) {
+            double[] origin=new double[3],point=new double[3],towardEye=new double[3];cam.toView(0,0,0,origin);
+            for(int axis=0;axis<3;axis++){cam.toView(axis==0?1:0,axis==1?1:0,axis==2?1:0,point);towardEye[axis]=point[2]-origin[2];}
+            mesh.translucentBsp.visit(towardEye,true,q->draw(raster,q,settings,true));
+        } else {
+            List<SceneMesh.MeshQuad> blended = new ArrayList<>(mesh.portalSorted);
+            blended.addAll(mesh.fluidSorted);blended.addAll(mesh.translucentSorted);drawSorted(raster,blended,cam,settings);
+        }
 
         return raster.color;
     }
@@ -120,10 +144,12 @@ public final class SchematicRenderer {
     }
 
     private static void draw(Rasterizer r, SceneMesh.MeshQuad q, RenderSettings s, boolean translucent) {
+        int[] colors=q.vertexColors;
+        if(colors!=null&&s.ambientShadeScale!=1){colors=colors.clone();for(int i=0;i<4;i++){int value=0;for(int shift=0;shift<=16;shift+=8)value|=Math.round(Math.max(0,Math.min(255,((colors[i]>>shift)&255)*s.ambientShadeScale)))<<shift;colors[i]=value;}}
         r.drawQuad(q.x0, q.y0, q.z0, q.x1, q.y1, q.z1, q.x2, q.y2, q.z2, q.x3, q.y3, q.z3,
             q.u0, q.v0, q.u1, q.v1, q.u2, q.v2, q.u3, q.v3,
             q.spriteId, q.rgb, q.image, q.tintR, q.tintG, q.tintB,
-            q.shade * s.ambientShadeScale, q.ao, translucent, q.doubleSided);
+            q.shade * s.ambientShadeScale, q.ao, translucent, q.doubleSided, colors);
     }
 
     /** Positions the camera so the mesh bounding box fits the viewport. */
@@ -133,7 +159,15 @@ public final class SchematicRenderer {
         double minZw = Double.MAX_VALUE, maxZw = -Double.MAX_VALUE;
         List<SceneMesh.MeshQuad> all = new java.util.ArrayList<>();
         all.addAll(mesh.solid); all.addAll(mesh.cutout); all.addAll(mesh.translucent);
+        all.addAll(mesh.portal); all.addAll(mesh.fluid);
+        if (all.isEmpty()) {
+            cam.centerX = cam.centerY = cam.centerZ = 0;
+            cam.zoom = 1;
+            cam.offsetX = cam.offsetY = 0;
+            return;
+        }
         for (SceneMesh.MeshQuad q : all) {
+            if(q.decorativeEffect())continue;
             minXw = Math.min(minXw, Math.min(Math.min(q.x0, q.x1), Math.min(q.x2, q.x3)));
             maxXw = Math.max(maxXw, Math.max(Math.max(q.x0, q.x1), Math.max(q.x2, q.x3)));
             minYw = Math.min(minYw, Math.min(Math.min(q.y0, q.y1), Math.min(q.y2, q.y3)));

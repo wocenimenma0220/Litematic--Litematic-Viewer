@@ -98,6 +98,18 @@ public final class BlockRegistry {
             }
         }
 
+        // Multipart files usually mention only connected states. Keep the absent state too:
+        // otherwise palette north=none/false silently falls back to the first connected value.
+        for (var entry : propValues.entrySet()) {
+            var domain = entry.getValue();
+            if (domain.values.contains("true") || domain.values.contains("false")) {
+                domain.add("false"); domain.add("true");
+            }
+            if (List.of("north", "south", "east", "west").contains(entry.getKey())
+                && (domain.values.contains("low") || domain.values.contains("tall")
+                    || domain.values.contains("side") || domain.values.contains("up"))) domain.add("none");
+        }
+
         // Properties that affect appearance but never appear in the blockstate json.
         //
         // The registry derives its property table from the blockstate file, so any property that
@@ -129,6 +141,17 @@ public final class BlockRegistry {
                     propValues.put(e.getKey(), valuesFor(e.getValue()));
                 }
             }
+        }
+        // Wall head orientation lives in the entity renderer, not in the empty skull model JSON.
+        if (blockId.equals("minecraft:decorated_pot")) {
+            propValues.putIfAbsent("facing", valuesFor(List.of("north","east","south","west")));
+            propValues.putIfAbsent("cracked", valuesFor(List.of("false","true")));
+        }
+        if (blockId.equals("minecraft:lectern"))propValues.putIfAbsent("has_book",valuesFor(List.of("false","true")));
+        if (blockId.endsWith("_wall_banner"))propValues.putIfAbsent("facing",valuesFor(List.of("north","east","south","west")));
+        else if(blockId.endsWith("_banner"))propValues.putIfAbsent("rotation",valuesFor(java.util.stream.IntStream.range(0,16).mapToObj(Integer::toString).toList()));
+        if ((blockId.endsWith("_wall_head") || blockId.endsWith("_wall_skull")) && !propValues.containsKey("facing")) {
+            propValues.put("facing", valuesFor(List.of("north", "south", "east", "west")));
         }
         // Fluids: `level` and `falling` never appear in a blockstate json, and dropping `level`
         // turned every stored flow gradient into a flat source surface.
@@ -242,6 +265,11 @@ public final class BlockRegistry {
         "minecraft:player_head", "minecraft:zombie_head", "minecraft:creeper_head",
         "minecraft:piglin_head", "minecraft:dragon_head"
     );
+
+    /** Actual skull block entities, excluding ordinary models such as piston_head. */
+    public static boolean isHead(String blockId) {
+        return HEADED_BLOCKS.contains(blockId.replace("_wall_", "_"));
+    }
 
     @SuppressWarnings("unchecked")
     private static void collectConditionProps(Map<String, LinkedHashSetSet> props, Map<String, Object> when) {

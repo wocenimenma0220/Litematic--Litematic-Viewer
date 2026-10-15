@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-15",
+  "sourceRoot": "D:\\litematic-display\\voxy-dev",
+  "modVersion": "0.2.20-beta",
+  "minecraftVersion": "26.2",
+  "method": "Static source inspection only. No mod, database, OpenGL or JMH performance run.",
+  "files": [
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\gradle.properties",
+      "sha256": "ae8c76b7a8fd196542035e4df895f7efe6aa8c148b254693a95c0614c4ca1972",
+      "lines": 37
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\LICENSE.md",
+      "sha256": "8d76b9d8866ffb2deffb22c5ff51b8042a539a88489e32c5b9f98418823b3030",
+      "lines": 5
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\world\\ActiveSectionTracker.java",
+      "sha256": "520f193b6ecdedae67c2b50cff45ed31cba6f58363fc401737e61c5b98a0cccc",
+      "lines": 388
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\world\\WorldSection.java",
+      "sha256": "903dd27f6ac37c74591ff5441c8462f18aafa8c3f6b917b84a6e362b320f2107",
+      "lines": 312
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\world\\WorldEngine.java",
+      "sha256": "43b38a546befc00270bcb88b1bf685dc5579dea92ca0fbed3e606db4751d4d65",
+      "lines": 201
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\world\\SaveLoadSystem3.java",
+      "sha256": "466486a46d6a08683111bda46f037d9e8f3694afe3c384694a214c743fa57387",
+      "lines": 110
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\world\\WorldUpdater.java",
+      "sha256": "c9fc9e886126d4772beae55d78ca0d930b0419c0d0b3c95b3a4fb4de82ceb040",
+      "lines": 161
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\world\\service\\SectionSavingService.java",
+      "sha256": "914e70c704f16182bece30f36b6ae00e20f2d7631d5fd9161fdeb7f54d79aa82",
+      "lines": 100
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\StorageConfigUtil.java",
+      "sha256": "86d7b4cf87149a67046fd0dceee6779486e3cf3582928709fd016cc3938c7f03",
+      "lines": 70
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\common\\config\\storage\\rocksdb\\RocksDBStorageBackend.java",
+      "sha256": "e36c6ed83af401f0e2c4a51c88f7814d55fa3e128d55546635af1f1b26a7add1",
+      "lines": 283
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\GeometryCache.java",
+      "sha256": "ceaf56b93d5447da8c25dc51fbe46321236907fce19eda1b692f50a810eda5ef",
+      "lines": 64
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\AsyncNodeManager.java",
+      "sha256": "c2e31b20bee5bb37b464b52eea2973c1d4175d29e30229b063dc77548e735358",
+      "lines": 1033
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\NodeManager.java",
+      "sha256": "b7384f0262133ba881d420a51e4e0cc4747c40f57ff801248889791a1a120d13",
+      "lines": 1718
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\NodeCleaner.java",
+      "sha256": "5681b3511a7fa8253c90ec08f8ca93247d8161fde9598bbc245268bf081f9ffe",
+      "lines": 191
+    },
+    {
+      "path": "D:\\litematic-display\\voxy-dev\\src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\building\\RenderGenerationService.java",
+      "sha256": "bbda8eff66a630c1614859c34bbab830307fa40f20d9b63203718cfbc737e349",
+      "lines": 364
+    }
+  ],
+  "geometryCacheReferences": [
+    {
+      "path": "src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\AsyncNodeManager.java",
+      "line": 74,
+      "operation": "declaration"
+    },
+    {
+      "path": "src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\AsyncNodeManager.java",
+      "line": 122,
+      "operation": "remove"
+    },
+    {
+      "path": "src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\AsyncNodeManager.java",
+      "line": 785,
+      "operation": "free"
+    },
+    {
+      "path": "src\\main\\java\\me\\cortex\\voxy\\client\\core\\rendering\\hierachical\\AsyncNodeManager.java",
+      "line": 799,
+      "operation": "clear"
+    }
+  ],
+  "geometryCachePutCalls": 0,
+  "layoutChecks": {
+    "sectionVoxels": 32768,
+    "sectionRawBytes": 262144,
+    "arrayReusePayloadMaxBytes": 104857600,
+    "secondaryCache1024PayloadBytes": 268435456,
+    "secondaryCache2048PayloadBytes": 536870912,
+    "paletteSerializedBytesFormula": "16 + 32768*2 + uniqueValues*8",
+    "uniformBeforeZstdBytes": 65560,
+    "rockDbBlockCacheBytes": 134217728,
+    "declaredCpuGeometryCacheBytes": 4294967296,
+    "quadBytes": 8
+  }
+}

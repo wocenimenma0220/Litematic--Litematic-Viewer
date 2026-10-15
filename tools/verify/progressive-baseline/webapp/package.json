@@ -1,0 +1,18 @@
+{
+  "name": "litematic-render-shell",
+  "version": "1.0.17.6",
+  "productName": "投影预览",
+  "private": true,
+  "description": "投影预览 — Minecraft Litematica 投影查看与导出",
+  "main": "main.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^44.7.0"
+  }
+}

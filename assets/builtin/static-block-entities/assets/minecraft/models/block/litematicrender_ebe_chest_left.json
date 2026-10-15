@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/litematicrender_ebe_template_chest_left",
+  "textures": {
+    "chest": "minecraft:entity/chest/normal_left"
+  }
+}

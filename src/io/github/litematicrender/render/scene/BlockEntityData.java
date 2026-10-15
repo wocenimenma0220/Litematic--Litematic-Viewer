@@ -18,11 +18,32 @@ public final class BlockEntityData {
     public record Sign(List<String> frontLines, List<String> backLines, int frontColor, int backColor,
                        boolean glowingFront, boolean glowingBack) {
         public boolean hasText() {
-            return !frontLines.isEmpty() || !backLines.isEmpty();
+            return frontLines.stream().anyMatch(line -> !line.isBlank()) || backLines.stream().anyMatch(line -> !line.isBlank());
         }
     }
 
     private BlockEntityData() {}
+
+    public static List<String> potPatterns(NbtCompound tag) {
+        var result = new ArrayList<String>();
+        var allowed = java.util.Set.of("angler","archer","arms_up","blade","brewer","burn","danger","explorer","flow","friend","guster","heart","heartbreak","howl","miner","mourner","plenty","prize","scrape","sheaf","shelter","skull","snort");
+        io.github.litematicrender.nbt.NbtElement decorations = tag == null ? null : tag.get("sherds").orElse(null);
+        if (decorations == null && tag != null) {
+            var components = tag.getCompound("components").orElse(null);
+            if (components != null) decorations = components.get("minecraft:pot_decorations").orElse(null);
+        }
+        String[] keys={"back","left","right","front"};
+        for(int i=0;i<4;i++) {
+            io.github.litematicrender.nbt.NbtElement item = null;
+            if(decorations instanceof NbtList list && i<list.size()) item=list.get(i);
+            else if(decorations instanceof NbtCompound compound) item=compound.get(keys[i]).orElse(null);
+            String id=item instanceof io.github.litematicrender.nbt.NbtScalars.NbtString text ? text.value
+                : item instanceof NbtCompound stack ? stack.getStringOrDefault("id","") : "";
+            String name=id.replace("minecraft:","").replace("_pottery_sherd","");
+            result.add(allowed.contains(name) ? name : "blank");
+        }
+        return result;
+    }
 
     /**
      * Reads a sign block entity.
@@ -54,7 +75,7 @@ public final class BlockEntityData {
             // Pre-1.20 layout: Text1..Text4 on the block entity itself.
             for (int i = 1; i <= 4; i++) {
                 String s = te.getStringOrDefault("Text" + i, "");
-                if (s != null && !s.isEmpty()) front.add(s);
+                front.add(plainText(s));
             }
             frontColor = dyeColor(te.getStringOrDefault("Color", "black"));
             glowFront = te.getBooleanOrDefault("GlowingText", false);
@@ -66,100 +87,68 @@ public final class BlockEntityData {
         NbtList messages = side.getList("messages").orElse(null);
         if (messages == null) return;
         for (int i = 0; i < messages.size(); i++) {
-            String raw = messages.getStringAt(i);
-            if (raw == null) continue;
-            String text = plainText(raw);
-            if (!text.isEmpty()) out.add(text);
+            out.add(nbtText(messages.get(i)));
         }
     }
 
-    /**
-     * Sign lines are stored as JSON text components. We only need the visible text, so this
-     * strips the component structure: quoted strings are kept, keys and punctuation dropped.
-     * Handles both {@code {"text":"hi"}} and legacy {@code {"extra":[{"text":"hi"}]}} shapes.
-     */
-    static String plainText(String json) {
-        if (json == null) return "";
-        String s = json.trim();
-        if (s.isEmpty()) return "";
-        // Fast path: a bare quoted string.
-        if (s.length() >= 2 && s.charAt(0) == '"' && s.charAt(s.length() - 1) == '"') {
-            return unescape(s.substring(1, s.length() - 1));
-        }
-        if (!s.startsWith("{")) return s;
-
-        // Prefer the "text" field when present, else concatenate quoted values in order.
-        StringBuilder sb = new StringBuilder();
-        int i = 0;
-        while (i < s.length()) {
-            char c = s.charAt(i);
-            if (c == '"') {
-                int end = i + 1;
-                StringBuilder token = new StringBuilder();
-                while (end < s.length()) {
-                    char d = s.charAt(end);
-                    if (d == '\\' && end + 1 < s.length()) {
-                        token.append(d).append(s.charAt(end + 1));
-                        end += 2;
-                        continue;
-                    }
-                    if (d == '"') break;
-                    token.append(d);
-                    end++;
-                }
-                String value = unescape(token.toString());
-                // Skip the value that belongs to a structural key.
-                int colon = s.lastIndexOf(':', i);
-                int brace = Math.max(s.lastIndexOf('{', i), s.lastIndexOf(',', i));
-                boolean isKey = colon > brace;
-                if (!isKey) sb.append(value);
-                i = end + 1;
-            } else {
-                i++;
-            }
-        }
-        return sb.toString();
+    /** Read visible component text only; preserve Unicode escapes, literal strings and extra arrays. */
+    public static String plainText(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        try { return componentText(io.github.litematicrender.util.MiniJson.parse(raw)); }
+        catch (RuntimeException e) { return raw; }
     }
 
-    private static String unescape(String s) {
-        StringBuilder sb = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            if (c == '\\' && i + 1 < s.length()) {
-                char n = s.charAt(++i);
-                switch (n) {
-                    case 'n' -> sb.append('\n');
-                    case 't' -> sb.append('\t');
-                    case 'r' -> sb.append('\r');
-                    default -> sb.append(n);
-                }
-            } else {
-                sb.append(c);
-            }
+    /** Newer game versions may store components directly as NBT instead of JSON strings. */
+    public static String nbtText(io.github.litematicrender.nbt.NbtElement value) {
+        if (value instanceof io.github.litematicrender.nbt.NbtScalars.NbtString text) return plainText(text.value);
+        if (value instanceof NbtCompound compound) {
+            String text = compound.getStringOrDefault("text", "");
+            NbtList extra = compound.getList("extra").orElse(null);
+            if (extra != null) for (var item : extra.getElements()) text += nbtText(item);
+            return text;
         }
-        return sb.toString();
+        if (value instanceof NbtList list) {
+            StringBuilder result = new StringBuilder();
+            for (var item : list.getElements()) result.append(nbtText(item));
+            return result.toString();
+        }
+        return "";
+    }
+
+    private static String componentText(Object value) {
+        if (value instanceof String text) return text;
+        if (value instanceof List<?> list) {
+            StringBuilder result = new StringBuilder();
+            for (Object item : list) result.append(componentText(item));
+            return result.toString();
+        }
+        if (value instanceof java.util.Map<?, ?> map) {
+            String text = map.get("text") instanceof String s ? s : "";
+            return text + componentText(map.get("extra"));
+        }
+        return "";
     }
 
     /** Vanilla dye colours, used for the text colour of a sign. */
     static int dyeColor(String name) {
         return switch (name) {
-            case "white" -> 0xF9FFFE;
-            case "orange" -> 0xF9801D;
-            case "magenta" -> 0xC74EBD;
-            case "light_blue" -> 0x3AB3DA;
-            case "yellow" -> 0xFED83D;
-            case "lime" -> 0x80C71F;
-            case "pink" -> 0xF38BAA;
-            case "gray" -> 0x474F52;
-            case "light_gray" -> 0x9D9D97;
-            case "cyan" -> 0x169C9C;
-            case "purple" -> 0x8932B8;
-            case "blue" -> 0x3C44AA;
-            case "brown" -> 0x835432;
-            case "green" -> 0x5E7C16;
-            case "red" -> 0xB02E26;
-            case "black" -> 0x1D1D21;
-            default -> 0x1D1D21;
+            case "white" -> 0xFFFFFF;
+            case "orange" -> 0xFF681F;
+            case "magenta" -> 0xFF00FF;
+            case "light_blue" -> 0x9AC0CD;
+            case "yellow" -> 0xFFFF00;
+            case "lime" -> 0xBFFF00;
+            case "pink" -> 0xFF69B4;
+            case "gray" -> 0x808080;
+            case "light_gray" -> 0xD3D3D3;
+            case "cyan" -> 0x00FFFF;
+            case "purple" -> 0xA020F0;
+            case "blue" -> 0x0000FF;
+            case "brown" -> 0x8B4513;
+            case "green" -> 0x00FF00;
+            case "red" -> 0xFF0000;
+            case "black" -> 0x000000;
+            default -> 0x000000;
         };
     }
 }

@@ -1,0 +1,175 @@
+ M .gitignore
+ M README.md
+ M assets/builtin/block-entity-textures/assets/minecraft/atlases/blocks.json
+ M install.bat
+ M package.ps1
+ D render-tests.ps1
+ D schematics/test/axes.litematic
+ D schematics/test/chests.litematic
+ D schematics/test/connections.litematic
+ D schematics/test/faces.litematic
+ D schematics/test/glass.litematic
+ D schematics/test/heads.litematic
+ D schematics/test/levers.litematic
+ D schematics/test/occlusion.litematic
+ D schematics/test/orient.litematic
+ D schematics/test/redstone.litematic
+ D schematics/test/shading.litematic
+ D schematics/test/slabs.litematic
+ D schematics/test/slope.litematic
+ D schematics/test/stairs.litematic
+ D schematics/test/water.litematic
+ D schematics/test/waterdepth.litematic
+ D schematics/test/waterlogged.litematic
+ D schematics/test/waterreal.litematic
+ D src/io/github/litematicrender/Diag.java
+ D src/io/github/litematicrender/DiagAllQuads.java
+ D src/io/github/litematicrender/DiagAnim.java
+ D src/io/github/litematicrender/DiagAtlas.java
+ D src/io/github/litematicrender/DiagBlockEntities.java
+ D src/io/github/litematicrender/DiagBounds.java
+ D src/io/github/litematicrender/DiagBoxEntities.java
+ D src/io/github/litematicrender/DiagCamera.java
+ D src/io/github/litematicrender/DiagCellVsLevel.java
+ D src/io/github/litematicrender/DiagCharset.java
+ D src/io/github/litematicrender/DiagChestStates.java
+ D src/io/github/litematicrender/DiagCorners.java
+ D src/io/github/litematicrender/DiagCull.java
+ D src/io/github/litematicrender/DiagFluid.java
+ D src/io/github/litematicrender/DiagFluidQuads.java
+ D src/io/github/litematicrender/DiagFrame.java
+ D src/io/github/litematicrender/DiagGenChests.java
+ D src/io/github/litematicrender/DiagGenHeads.java
+ D src/io/github/litematicrender/DiagGenLevers.java
+ D src/io/github/litematicrender/DiagGenOrient.java
+ D src/io/github/litematicrender/DiagGenSchematic.java
+ D src/io/github/litematicrender/DiagGenSlope.java
+ D src/io/github/litematicrender/DiagGenStairs.java
+ D src/io/github/litematicrender/DiagGenWaterDepth.java
+ D src/io/github/litematicrender/DiagGenWaterReal.java
+ D src/io/github/litematicrender/DiagLayers.java
+ D src/io/github/litematicrender/DiagLeaves.java
+ D src/io/github/litematicrender/DiagLeavesWater.java
+ D src/io/github/litematicrender/DiagLevelHeights.java
+ D src/io/github/litematicrender/DiagLever.java
+ D src/io/github/litematicrender/DiagLeverGeom.java
+ D src/io/github/litematicrender/DiagModelless.java
+ D src/io/github/litematicrender/DiagOrientation.java
+ D src/io/github/litematicrender/DiagPalette.java
+ D src/io/github/litematicrender/DiagPerf.java
+ D src/io/github/litematicrender/DiagQuads.java
+ D src/io/github/litematicrender/DiagRawPalette.java
+ D src/io/github/litematicrender/DiagRawWater.java
+ D src/io/github/litematicrender/DiagRot.java
+ D src/io/github/litematicrender/DiagShapeAudit.java
+ D src/io/github/litematicrender/DiagSimLevels.java
+ D src/io/github/litematicrender/DiagSlopeProfile.java
+ D src/io/github/litematicrender/DiagStairs.java
+ D src/io/github/litematicrender/DiagStairs2.java
+ D src/io/github/litematicrender/DiagTick.java
+ D src/io/github/litematicrender/DiagTint.java
+ D src/io/github/litematicrender/DiagUv.java
+ D src/io/github/litematicrender/DiagVariants.java
+ D src/io/github/litematicrender/DiagWaterDup.java
+ D src/io/github/litematicrender/DiagWaterLevels.java
+ D src/io/github/litematicrender/DiagWaterScene.java
+ D src/io/github/litematicrender/DiagWaterSprite.java
+ D src/io/github/litematicrender/DiagWaterlogged.java
+ M src/io/github/litematicrender/Main.java
+ M src/io/github/litematicrender/model/ModelBaker.java
+ M src/io/github/litematicrender/nbt/NbtCompound.java
+ M src/io/github/litematicrender/nbt/NbtIo.java
+ M src/io/github/litematicrender/nbt/NbtList.java
+ M src/io/github/litematicrender/nbt/NbtScalars.java
+ M src/io/github/litematicrender/nbt/io/NbtFileUtils.java
+ M src/io/github/litematicrender/nbt/io/NbtSizeTracker.java
+ M src/io/github/litematicrender/render/FontRenderer.java
+ M src/io/github/litematicrender/render/GifWriter.java
+ M src/io/github/litematicrender/render/Image.java
+ M src/io/github/litematicrender/render/MeshExporter.java
+ M src/io/github/litematicrender/render/RenderSettings.java
+ D src/io/github/litematicrender/render/RenderTest.java
+ M src/io/github/litematicrender/render/SchematicRenderer.java
+ M src/io/github/litematicrender/render/SpriteAtlas.java
+ M src/io/github/litematicrender/render/SpriteContents.java
+ M src/io/github/litematicrender/render/raster/Rasterizer.java
+ M src/io/github/litematicrender/render/scene/BlockEntityData.java
+ D src/io/github/litematicrender/render/scene/BlockEntityModels.java
+ D src/io/github/litematicrender/render/scene/FluidSimulation.java
+ M src/io/github/litematicrender/render/scene/LightVolume.java
+ M src/io/github/litematicrender/render/scene/SceneBuilder.java
+ M src/io/github/litematicrender/render/scene/SceneMesh.java
+ M src/io/github/litematicrender/schematic/LitematicaSchematic.java
+ D src/io/github/litematicrender/schematic/SchematicTest.java
+ M src/io/github/litematicrender/serve/JsonRpcServer.java
+ M src/io/github/litematicrender/serve/RenderEngine.java
+ M src/io/github/litematicrender/world/BlockRegistry.java
+ M src/io/github/litematicrender/world/BlockShape.java
+ M verify.ps1
+ M webapp/engine-client.js
+ M webapp/main.js
+ M webapp/package-lock.json
+ M webapp/package.json
+ M webapp/preload.js
+ M webapp/renderer/gpu-view.js
+ M webapp/renderer/index.html
+ M webapp/renderer/renderer.js
+ M webapp/renderer/style.css
+ D "\345\220\257\345\212\250.bat"
+ D "\345\221\275\344\273\244\350\241\214\346\270\262\346\237\223.bat"
+?? CHANGELOG.md
+?? LOD_STREAMING.md
+?? "LiteTool\346\270\262\346\237\223\344\270\216\345\244\247\346\212\225\345\275\261\345\212\240\350\275\275\350\257\204\344\274\260.md"
+?? "ScalableLux\345\205\211\347\205\247\350\257\204\344\274\260.md"
+?? "Sodium\344\270\216EBE\346\270\262\346\237\223\344\274\230\345\214\226\350\257\204\344\274\260.md"
+?? TODO.md
+?? assets/builtin/block-entity-textures/assets/minecraft/lang/
+?? assets/builtin/block-entity-textures/assets/minecraft/models/
+?? assets/builtin/block-entity-textures/assets/minecraft/textures/
+?? assets/builtin/minecraft-font/
+?? assets/builtin/static-block-entities/
+?? assets/item-stacks.json
+?? src/io/github/litematicrender/nbt/NbtPackedLongArray.java
+?? src/io/github/litematicrender/nbt/PackedLongArray.java
+?? src/io/github/litematicrender/render/CliRenderer.java
+?? src/io/github/litematicrender/render/RenderBackground.java
+?? src/io/github/litematicrender/render/StreamMeshExporter.java
+?? src/io/github/litematicrender/render/StreamMeshIndex.java
+?? src/io/github/litematicrender/render/Transparency.java
+?? src/io/github/litematicrender/render/scene/EntityGeometry.java
+?? src/io/github/litematicrender/render/scene/HeadGeometry.java
+?? src/io/github/litematicrender/render/scene/LightGrid.java
+?? src/io/github/litematicrender/render/scene/LightPage.java
+?? src/io/github/litematicrender/render/scene/LightSampler.java
+?? src/io/github/litematicrender/render/scene/LodMesh.java
+?? src/io/github/litematicrender/render/scene/MinecartPose.java
+?? src/io/github/litematicrender/render/scene/MobHeadGeometry.java
+?? src/io/github/litematicrender/render/scene/OverviewMesh.java
+?? src/io/github/litematicrender/render/scene/RedstoneSurfaces.java
+?? src/io/github/litematicrender/render/scene/ScenePicker.java
+?? src/io/github/litematicrender/render/scene/SectionVisibility.java
+?? src/io/github/litematicrender/render/scene/SignGeometry.java
+?? src/io/github/litematicrender/render/scene/SmoothLighting.java
+?? src/io/github/litematicrender/render/scene/SparseLightVolume.java
+?? src/io/github/litematicrender/render/scene/SpecialBlockGeometry.java
+?? src/io/github/litematicrender/render/scene/TranslucentBsp.java
+?? src/io/github/litematicrender/render/skin/
+?? src/io/github/litematicrender/resource/BuiltinPacks.java
+?? src/io/github/litematicrender/schematic/SchematicEntity.java
+?? src/io/github/litematicrender/serve/BlockInspector.java
+?? src/io/github/litematicrender/serve/CacheFingerprint.java
+?? src/io/github/litematicrender/serve/MaterialExporter.java
+?? src/io/github/litematicrender/serve/MaterialIcons.java
+?? src/io/github/litematicrender/serve/MaterialList.java
+?? src/io/github/litematicrender/serve/SceneCache.java
+?? tools/
+?? webapp/app.ico
+?? webapp/cache-cleanup.js
+?? webapp/icon.png
+?? webapp/renderer/crosshair.png
+?? webapp/renderer/lod-stream.js
+?? webapp/scene-transfer.js
+?? webapp/ui-settings.js
+?? "\345\244\247\346\212\225\345\275\261\346\274\253\346\270\270\346\200\247\350\203\275\350\260\203\346\237\245.md"
+?? "\346\212\225\345\275\261\346\270\262\346\237\223\344\270\216\345\214\272\345\235\227\347\274\223\345\255\230\347\273\274\345\220\210\350\257\204\344\274\260.md"
+?? "\346\212\225\345\275\261\351\242\204\350\247\210.exe"

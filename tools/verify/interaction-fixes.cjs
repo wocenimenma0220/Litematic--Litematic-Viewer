@@ -1,0 +1,61 @@
+const {app,BrowserWindow}=require('electron'),fs=require('node:fs'),path=require('node:path');
+const root=process.argv[2]||path.resolve(__dirname,'../..');process.argv=process.argv.slice(0,2);
+const out=path.join(__dirname,'interaction-output');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'electron'));
+fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({pass:false,started:true}));
+BrowserWindow.prototype.show=function(){};
+const {EngineClient}=require(path.join(root,'webapp/engine-client'));
+const originalCall=EngineClient.prototype.call,sceneCalls=[];
+EngineClient.prototype.call=function(method,params){return originalCall.call(this,method,params).then(result=>{if(method==='exportScene')sceneCalls.push({force:params.force,cached:result.sceneCached});return result;});};
+app.once('browser-window-created',(_event,win)=>win.webContents.once('did-finish-load',async()=>{
+ try {
+  const result=await win.webContents.executeJavaScript(`(async()=>{
+   const check=(ok,text)=>{if(!ok)throw new Error(text);};
+   const wait=ms=>new Promise(r=>setTimeout(r,ms));
+   window.__lockFailure=false;window.__lockRequests=0;
+   const lock=value=>{Object.defineProperty(document,'pointerLockElement',{configurable:true,value});document.dispatchEvent(new Event('pointerlockchange'));};
+   document.exitPointerLock=()=>lock(null);
+   els.viewport.requestPointerLock=()=>{window.__lockRequests++;if(window.__lockFailure)return Promise.reject(new Error('test refusal'));lock(els.viewport);const warp=new MouseEvent('mousemove',{bubbles:true});Object.defineProperty(warp,'movementX',{value:300});Object.defineProperty(warp,'movementY',{value:-180});els.viewport.dispatchEvent(warp);return Promise.resolve();};
+   await window.__uiReady;if(els.welcome.open)await dismissWelcome(false);await window.engine.loadResources(null);
+   await loadFile(${JSON.stringify(path.resolve(__dirname,'fly-output/inspection.litematic'))});check(state.viewReady,'actual view failed');
+   setFly(true);await wait(20);check(document.pointerLockElement===els.viewport&&state.flyLookActive,'entering fly did not lock');
+   const tick=()=>{state.flyTime=1000;flyTick(1000+1000/60);cancelAnimationFrame(state.animHandle);state.animHandle=0;};
+   cancelAnimationFrame(state.animHandle);state.animHandle=0;
+   const key=(type,code)=>window.dispatchEvent(new KeyboardEvent(type,{code,bubbles:true,cancelable:true}));
+   state.flyPos=[0,0,0];state.keys.clear();key('keydown','ShiftLeft');tick();key('keyup','ShiftLeft');
+   check(Math.abs(state.flyPos[1]+.15)<1e-5&&state.flyPos[2]===0,'Shift is not descent');
+   state.flyPos=[0,0,0];key('keydown','ControlLeft');tick();check(state.flyPos.every(v=>v===0),'Ctrl alone moved camera');
+   key('keydown','KeyW');tick();key('keyup','KeyW');key('keyup','ControlLeft');
+   check(Math.abs(state.flyPos[2]+.4)<1e-5,'Ctrl did not accelerate');
+   const yaw=state.flyYaw;
+   const move=new MouseEvent('mousemove',{bubbles:true,clientX:100000,clientY:100000});Object.defineProperty(move,'movementX',{value:12});Object.defineProperty(move,'movementY',{value:0});els.gl.dispatchEvent(move);
+   check(state.flyYaw!==yaw&&document.pointerLockElement===els.viewport,'locked mouse did not use relative movement');
+   key('keydown','Escape');check(!state.flyLookActive&&document.pointerLockElement===null,'Esc did not release intentionally');
+   window.__lockFailure=true;resumeFlyLook();await wait(20);const pausedYaw=state.flyYaw;
+   els.gl.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:3,clientY:3}));
+   check(!state.flyLookActive&&!state.flyLockPending&&state.flyYaw===pausedYaw&&els.log.textContent.includes('鼠标锁定失败'),'refusal silently entered free-cursor look');
+   window.__lockFailure=false;
+   els.gl.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,button:0,clientX:20,clientY:20}));
+   els.gl.dispatchEvent(new MouseEvent('mouseup',{bubbles:true,button:0,clientX:20,clientY:20}));await wait(20);
+   check(state.flyLookActive&&document.pointerLockElement===els.viewport,'click did not reacquire lock');
+   pauseFlyLook();state.flyPos=[2.5,1.25,-3];state.flyYaw=.4;state.flyPitch=.2;state.zoom=1.4;drawView();
+   const before={pos:state.flyPos.slice(),yaw:state.flyYaw,pitch:state.flyPitch,zoom:state.zoom,revision:state.view.revision};
+   els.render.click();check(state.rendering&&els.log.textContent.includes('开始重新渲染'),'button did not start rebuild');
+   const deadline=Date.now()+30000;while(state.rendering){if(Date.now()>deadline)throw new Error('rebuild timeout');await wait(30);}
+   check(state.viewReady&&state.view.revision>before.revision&&els.log.textContent.includes('重新渲染完成'),'rebuild completion missing');
+   check(JSON.stringify(state.flyPos)===JSON.stringify(before.pos)&&state.flyYaw===before.yaw&&state.flyPitch===before.pitch&&state.zoom===before.zoom,'rebuild reset camera');
+   setFly(false);return {pass:true,shiftDescends:true,ctrlAccelerates:true,lockFailurePauses:true,clickRelocks:true,rebuildLogs:true,rebuildPreservesCamera:true,glError:state.view.gl.getError()};
+  })()`);
+  if(sceneCalls.length!==2||sceneCalls[1].force!==true||sceneCalls[1].cached!==false)throw new Error('Backend did not rebuild: '+JSON.stringify(sceneCalls));
+  await win.webContents.executeJavaScript('setFly(true)');
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Control'});
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'W',modifiers:['control']});
+  await new Promise(resolve=>setTimeout(resolve,40));
+  if(win.isDestroyed())throw new Error('Ctrl+W closed the fly window');
+  win.webContents.sendInputEvent({type:'keyUp',keyCode:'W',modifiers:['control']});
+  win.webContents.sendInputEvent({type:'keyUp',keyCode:'Control'});
+  result.ctrlWDoesNotClose=true;
+  result.sceneCalls=sceneCalls;fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));app.quit();
+ }catch(error){fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({pass:false,error:error.stack}));console.error(error.stack);app.exit(1);}
+}));
+require(path.join(root,'webapp/main.js'));
+setTimeout(()=>app.exit(1),120000).unref();

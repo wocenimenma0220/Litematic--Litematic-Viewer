@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/litematicrender_ebe_template_pottery_pattern_west",
+  "textures": {
+    "pattern": "minecraft:entity/decorated_pot/brewer_pottery_pattern"
+  }
+}

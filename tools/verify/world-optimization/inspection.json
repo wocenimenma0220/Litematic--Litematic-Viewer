@@ -1,0 +1,29 @@
+{
+  "pass": true,
+  "checks": [
+    "fly mode requests mouse lock",
+    "screen ray matches fly camera",
+    "original Minecraft crosshair is centered",
+    "crosshair selection and same-NBT quantity aggregation",
+    "clicked geometry resolves correct cell",
+    "inspection releases mouse look",
+    "mouse movement rotates without holding either button",
+    "100 mouse events produce one frame instead of 100 redraws",
+    "locked mouse uses relative movement",
+    "paused view allows UI interaction",
+    "right-click does not open inventory",
+    "double chest combines matching stacks across both halves",
+    "modern item name is visible text",
+    "item details click does not rotate camera",
+    "inventory panel scrolling does not zoom the scene",
+    "V exits fly mode while an inventory item has focus",
+    "orbit mode keeps its existing click behavior",
+    "overhanging pot neck resolves original block and stored item",
+    "leaving fly mode hides inspection and crosshair",
+    "actual WebGL remains healthy"
+  ],
+  "health": {
+    "error": 0,
+    "quads": 93
+  }
+}

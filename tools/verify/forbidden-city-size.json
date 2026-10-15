@@ -1,0 +1,158 @@
+{
+  "decodedBytes": 3119088997,
+  "arrayBytes": 3112050328,
+  "nonzeroPageBytes": 1977778176,
+  "arrays": [
+    {
+      "path": "/Regions/r.3.-5/BlockStates",
+      "length": 10485760,
+      "bytes": 83886080
+    },
+    {
+      "path": "/Regions/r.-1.3/BlockStates",
+      "length": 7667712,
+      "bytes": 61341696
+    },
+    {
+      "path": "/Regions/r.0.3/BlockStates",
+      "length": 7667712,
+      "bytes": 61341696
+    },
+    {
+      "path": "/Regions/r.-1.0/BlockStates",
+      "length": 7004160,
+      "bytes": 56033280
+    },
+    {
+      "path": "/Regions/r.0.0/BlockStates",
+      "length": 7004160,
+      "bytes": 56033280
+    },
+    {
+      "path": "/Regions/r.0.-6/BlockStates",
+      "length": 6963200,
+      "bytes": 55705600
+    },
+    {
+      "path": "/Regions/r.-1.-1/BlockStates",
+      "length": 6782976,
+      "bytes": 54263808
+    },
+    {
+      "path": "/Regions/r.0.-1/BlockStates",
+      "length": 6782976,
+      "bytes": 54263808
+    },
+    {
+      "path": "/Regions/r.-1.-6/BlockStates",
+      "length": 6266880,
+      "bytes": 50135040
+    },
+    {
+      "path": "/Regions/r.-4.2/BlockStates",
+      "length": 6266880,
+      "bytes": 50135040
+    },
+    {
+      "path": "/Regions/r.3.2/BlockStates",
+      "length": 6266880,
+      "bytes": 50135040
+    },
+    {
+      "path": "/Regions/r.-1.4/BlockStates",
+      "length": 6225920,
+      "bytes": 49807360
+    },
+    {
+      "path": "/Regions/r.0.4/BlockStates",
+      "length": 6225920,
+      "bytes": 49807360
+    },
+    {
+      "path": "/Regions/r.-1.-2/BlockStates",
+      "length": 5971968,
+      "bytes": 47775744
+    },
+    {
+      "path": "/Regions/r.0.-2/BlockStates",
+      "length": 5971968,
+      "bytes": 47775744
+    },
+    {
+      "path": "/Regions/r.-1.-4/BlockStates",
+      "length": 5816320,
+      "bytes": 46530560
+    },
+    {
+      "path": "/Regions/r.0.-4/BlockStates",
+      "length": 5775360,
+      "bytes": 46202880
+    },
+    {
+      "path": "/Regions/r.1.-3/BlockStates",
+      "length": 5693440,
+      "bytes": 45547520
+    },
+    {
+      "path": "/Regions/r.1.1/BlockStates",
+      "length": 5693440,
+      "bytes": 45547520
+    },
+    {
+      "path": "/Regions/r.-3.-4/BlockStates",
+      "length": 5611520,
+      "bytes": 44892160
+    },
+    {
+      "path": "/Regions/r.2.-3/BlockStates",
+      "length": 5242880,
+      "bytes": 41943040
+    },
+    {
+      "path": "/Regions/r.-4.-6/BlockStates",
+      "length": 5234688,
+      "bytes": 41877504
+    },
+    {
+      "path": "/Regions/r.-4.3/BlockStates",
+      "length": 5234688,
+      "bytes": 41877504
+    },
+    {
+      "path": "/Regions/r.3.-6/BlockStates",
+      "length": 5234688,
+      "bytes": 41877504
+    },
+    {
+      "path": "/Regions/r.3.3/BlockStates",
+      "length": 5234688,
+      "bytes": 41877504
+    },
+    {
+      "path": "/Regions/r.-1.2/BlockStates",
+      "length": 5197824,
+      "bytes": 41582592
+    },
+    {
+      "path": "/Regions/r.0.2/BlockStates",
+      "length": 5197824,
+      "bytes": 41582592
+    },
+    {
+      "path": "/Regions/r.-2.0/BlockStates",
+      "length": 5124096,
+      "bytes": 40992768
+    },
+    {
+      "path": "/Regions/r.-2.1/BlockStates",
+      "length": 5124096,
+      "bytes": 40992768
+    },
+    {
+      "path": "/Regions/r.1.0/BlockStates",
+      "length": 5124096,
+      "bytes": 40992768
+    }
+  ],
+  "seconds": 5.438000000001921
+}

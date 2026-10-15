@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/litematicrender_ebe_template_pottery_pattern_east",
+  "textures": {
+    "pattern": "minecraft:entity/decorated_pot/sheaf_pottery_pattern"
+  }
+}

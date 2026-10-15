@@ -1,7 +1,7 @@
 package io.github.litematicrender;
 
 import io.github.litematicrender.render.RenderSettings;
-import io.github.litematicrender.render.RenderTest;
+import io.github.litematicrender.render.CliRenderer;
 
 import java.nio.file.Path;
 
@@ -26,7 +26,7 @@ public final class Main {
         if (args.length > 0 && args[0].equals("--render")) {
             String[] rest = new String[args.length - 1];
             System.arraycopy(args, 1, rest, 0, rest.length);
-            RenderTest.main(buildCliArgs(rest, vanilla));
+            CliRenderer.main(buildCliArgs(rest, vanilla));
             return;
         }
 
@@ -40,7 +40,7 @@ public final class Main {
             int size = args.length > 3 ? Integer.parseInt(args[3]) : 512;
             int frames = args.length > 4 ? Integer.parseInt(args[4]) : 64;
             RenderSettings settings = new RenderSettings(45f, 30f, size, size);
-            RenderTest.renderAnimation(schem, vanilla, out, settings, frames, 5, true);
+            CliRenderer.renderAnimation(schem, vanilla, out, settings, frames, 5, true);
             return;
         }
 
@@ -60,8 +60,8 @@ public final class Main {
         out.add(rest.length > 0 ? rest[0] : "");
         out.add(vanilla.toString());
         out.add(rest.length > 1 ? rest[1] : "render.png");
-        if (rest.length > 2) out.add(rest[2]);
-        if (rest.length > 3) out.add(rest[3]);
+        // Forward the optional trailing arguments verbatim: width, height, rotation, slant.
+        for (int i = 2; i < rest.length; i++) out.add(rest[i]);
         return out.toArray(String[]::new);
     }
 }

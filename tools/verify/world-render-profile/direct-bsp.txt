@@ -1,0 +1,7 @@
+resourcesMillis=32288.8417
+parseMillis=58.4511
+buildMillis=990.4404
+stages={skins=35.007, lighting=157.439, regionIndex=9.0593, geometry=614.0583, atlas=23.5677, bookkeeping=0.1044, subdivision=0.0708, bsp=151.0543}
+quads raw=158395 solid=125817 cutout=8444 blending=24134 subdivided=24134 bsp=31591 nodes=7215 fallback=0
+exportMillis=469.5381 bytes=24229076
+cpuRenderMillis=202.0272

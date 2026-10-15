@@ -24,7 +24,13 @@ public final class GifWriter {
     private final int height;
     /** 256 RGB entries, 0xRRGGBB. Index 0 is reserved for transparency. */
     private final int[] palette = new int[256];
-    private final ByteArrayOutputStream out = new ByteArrayOutputStream();
+    private final Sink out = new Sink();
+    private static final class Sink {
+        java.io.OutputStream stream = new ByteArrayOutputStream();
+        void write(int value) { try { stream.write(value); } catch (IOException e) { throw new java.io.UncheckedIOException(e); } }
+        void write(byte[] bytes, int start, int length) { try { stream.write(bytes,start,length); } catch (IOException e) { throw new java.io.UncheckedIOException(e); } }
+        byte[] toByteArray() { return ((ByteArrayOutputStream)stream).toByteArray(); }
+    }
     /** argb -> palette index, so the O(256) search runs once per distinct colour. */
     private final Map<Integer, Integer> nearestCache = new HashMap<>();
     private int framesWritten;
@@ -32,6 +38,46 @@ public final class GifWriter {
     public GifWriter(int width, int height) {
         this.width = width;
         this.height = height;
+    }
+
+    @FunctionalInterface public interface FrameSource { Image render(int tick) throws Exception; }
+
+    /** Render once, spool raw pixels, then encode with one stable palette and bounded frame memory. */
+    public static void writeFrames(Path file, int frameCount, int delayCs, FrameSource source) throws Exception {
+        if (frameCount <= 0) throw new IOException("no frames to write");
+        Path destination = file.toAbsolutePath(), parent = destination.getParent();
+        Files.createDirectories(parent);
+        Path spool = Files.createTempFile(parent,".projection-frames-",".tmp");
+        Path encoded = null;
+        try {
+            var histogram = new PaletteBuilder();
+            GifWriter gif = null;
+            try (var pixels = new java.io.DataOutputStream(new java.io.BufferedOutputStream(Files.newOutputStream(spool),1<<20))) {
+                for (int tick=0;tick<frameCount;tick++) {
+                    Image frame=source.render(tick);
+                    if (gif==null) gif=new GifWriter(frame.width,frame.height);
+                    if (frame.width!=gif.width || frame.height!=gif.height) throw new IOException("frame size mismatch");
+                    histogram.add(frame);
+                    for (int pixel:frame.pixels()) pixels.writeInt(pixel);
+                }
+            }
+            histogram.finish(gif.palette);
+            encoded=Files.createTempFile(parent,".projection-gif-",".tmp");
+            try (var output=new java.io.BufferedOutputStream(Files.newOutputStream(encoded),1<<20);
+                 var pixels=new java.io.DataInputStream(new java.io.BufferedInputStream(Files.newInputStream(spool),1<<20))) {
+                gif.out.stream=output; gif.writeHeader();
+                Image frame=new Image(gif.width,gif.height);
+                for(int tick=0;tick<frameCount;tick++) {
+                    for(int i=0;i<frame.pixels().length;i++) frame.pixels()[i]=pixels.readInt();
+                    gif.writeFrame(frame,delayCs);
+                }
+                gif.writeTrailer();
+            }
+            Files.move(encoded,destination,java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(spool);
+            if(encoded!=null) Files.deleteIfExists(encoded);
+        }
     }
 
     /**
@@ -72,10 +118,16 @@ public final class GifWriter {
      * remaining slots are filled with the average colour of the frames so gradients stay smooth.
      */
     private void buildPalette(java.util.List<Image> frames) {
-        Map<Integer, Integer> histogram = new HashMap<>();
+        var builder=new PaletteBuilder();
+        for(Image frame:frames)builder.add(frame);
+        builder.finish(this.palette);
+    }
+
+    private static final class PaletteBuilder {
+        final Map<Integer, Long> histogram = new HashMap<>();
         long[] sums = new long[3];
         long total = 0;
-        for (Image f : frames) {
+        void add(Image f) {
             int[] px = f.pixels();
             for (int argb : px) {
                 int a = (argb >>> 24) & 0xFF;
@@ -84,20 +136,21 @@ public final class GifWriter {
                 sums[0] += r; sums[1] += g; sums[2] += b; total++;
                 // 5 bits per channel, but rounded so neighbouring colours share a bucket.
                 int key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-                histogram.merge(key, 1, Integer::sum);
+                histogram.merge(key, 1L, Long::sum);
             }
         }
 
+        void finish(int[] palette) {
         // index 0 is reserved for transparency by the frame encoder.
         int idx = 1;
-        List<Map.Entry<Integer, Integer>> sorted = new ArrayList<>(histogram.entrySet());
-        sorted.sort((x, y) -> Integer.compare(y.getValue(), x.getValue()));
-        for (Map.Entry<Integer, Integer> e : sorted) {
+        List<Map.Entry<Integer, Long>> sorted = new ArrayList<>(histogram.entrySet());
+        sorted.sort((x, y) -> Long.compare(y.getValue(), x.getValue()));
+        for (Map.Entry<Integer, Long> e : sorted) {
             if (idx >= 256) break;
             int key = e.getKey();
             int r = (key >>> 10) & 0x1F, g = (key >>> 5) & 0x1F, b = key & 0x1F;
             // Reconstruct the centre of the bucket rather than its floor, to avoid a dark bias.
-            this.palette[idx++] = (((r << 3) | 4) << 16) | (((g << 3) | 4) << 8) | ((b << 3) | 4);
+            palette[idx++] = (((r << 3) | 4) << 16) | (((g << 3) | 4) << 8) | ((b << 3) | 4);
         }
 
         // If the art used fewer than 255 distinct colours, pad with the average so the encoder
@@ -108,8 +161,9 @@ public final class GifWriter {
             int ab = total == 0 ? 0 : (int) (sums[2] / total);
             int base = (ar << 16) | (ag << 8) | ab;
             while (idx < 256) {
-                this.palette[idx++] = base;
+                palette[idx++] = base;
             }
+        }
         }
     }
 
@@ -138,6 +192,7 @@ public final class GifWriter {
             }
             result = best;
         }
+        if (this.nearestCache.size() >= 65536) this.nearestCache.clear();
         this.nearestCache.put(argb, result);
         return result;
     }

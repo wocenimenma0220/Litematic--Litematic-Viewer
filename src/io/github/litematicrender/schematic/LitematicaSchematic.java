@@ -3,6 +3,8 @@ package io.github.litematicrender.schematic;
 import io.github.litematicrender.nbt.NbtCompound;
 import io.github.litematicrender.nbt.NbtList;
 import io.github.litematicrender.nbt.NbtScalars;
+import io.github.litematicrender.nbt.NbtPackedLongArray;
+import io.github.litematicrender.nbt.PackedLongArray;
 import io.github.litematicrender.nbt.io.NbtFileUtils;
 import io.github.litematicrender.world.BlockRegistry;
 import io.github.litematicrender.world.BlockState;
@@ -67,11 +69,11 @@ public final class LitematicaSchematic {
     public static final class BlockContainer {
         public final int sizeX, sizeY, sizeZ;
         public final int bits;
-        public final long[] storage;
+        public final PackedLongArray storage;
         /** resolved palette; index 0 is conventionally air */
         public final BlockState[] palette;
 
-        BlockContainer(int sizeX, int sizeY, int sizeZ, int bits, long[] storage, BlockState[] palette) {
+        BlockContainer(int sizeX, int sizeY, int sizeZ, int bits, PackedLongArray storage, BlockState[] palette) {
             this.sizeX = sizeX;
             this.sizeY = sizeY;
             this.sizeZ = sizeZ;
@@ -106,10 +108,11 @@ public final class LitematicaSchematic {
 
         public void forEachNonAir(NonAirConsumer consumer) {
             int bits = this.bits;
-            long[] packed = this.storage;
-            if (packed.length == 0) return;
+            PackedLongArray packed = this.storage;
+            if (packed.length() == 0) return;
             boolean zeroMeansAir = this.palette.length == 0 || this.palette[0].isAir();
             for (int y = 0; y < this.sizeY; y++) {
+                if(Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException("投影扫描已取消");
                 for (int z = 0; z < this.sizeZ; z++) {
                     long rowStart = ((long) y * this.sizeZ + z) * this.sizeX;
                     long rowEnd = rowStart + this.sizeX;
@@ -117,8 +120,12 @@ public final class LitematicaSchematic {
                     int lastWord = (int) (((rowEnd - 1L) * bits) >>> 6);
                     long lastProcessedIndex = rowStart - 1L;
                     for (int wordIndex = firstWord; wordIndex <= lastWord; wordIndex++) {
-                        if (wordIndex >= packed.length) break;
-                        if (zeroMeansAir && packed[wordIndex] == 0L) {
+                        if (wordIndex >= packed.length()) break;
+                        if (zeroMeansAir && packed.zeroPage(wordIndex)) {
+                            wordIndex=Math.min(lastWord,((wordIndex/PackedLongArray.PAGE_WORDS)+1)*PackedLongArray.PAGE_WORDS-1);
+                            continue;
+                        }
+                        if (zeroMeansAir && packed.get(wordIndex) == 0L) {
                             continue;
                         }
                         long firstIndex = Math.max(rowStart, ((long) wordIndex * 64L) / bits);
@@ -141,18 +148,22 @@ public final class LitematicaSchematic {
 
     /** LitematicaBitArray.getAt equivalent. */
     public static int getAt(long[] longArray, int bitsPerEntry, long index) {
+        return getAt(PackedLongArray.wrap(longArray),bitsPerEntry,index);
+    }
+
+    public static int getAt(PackedLongArray longArray, int bitsPerEntry, long index) {
         long startOffset = index * (long) bitsPerEntry;
         int startArrIndex = (int) (startOffset >> 6);
         int endArrIndex = (int) ((((index + 1L) * (long) bitsPerEntry) - 1L) >> 6);
         int startBitOffset = (int) (startOffset & 0x3F);
         long maxEntryValue = (1L << bitsPerEntry) - 1L;
-        if (startArrIndex >= longArray.length) return 0;
+        if (startArrIndex >= longArray.length()) return 0;
         if (startArrIndex == endArrIndex) {
-            return (int) (longArray[startArrIndex] >>> startBitOffset & maxEntryValue);
+            return (int) (longArray.get(startArrIndex) >>> startBitOffset & maxEntryValue);
         } else {
-            if (endArrIndex >= longArray.length) endArrIndex = longArray.length - 1;
+            if (endArrIndex >= longArray.length()) endArrIndex = longArray.length() - 1;
             int endOffset = 64 - startBitOffset;
-            return (int) ((longArray[startArrIndex] >>> startBitOffset | longArray[endArrIndex] << endOffset) & maxEntryValue);
+            return (int) ((longArray.get(startArrIndex) >>> startBitOffset | longArray.get(endArrIndex) << endOffset) & maxEntryValue);
         }
     }
 
@@ -163,6 +174,15 @@ public final class LitematicaSchematic {
         public final Vec3i size;       // can be negative in raw form
         public BlockContainer blocks;
         public final Map<Long, NbtCompound> blockEntities;  // key = packed local (x,y,z)
+        public List<UnresolvedBlockState> storedPalette = List.of();
+        public List<SchematicEntity> entities = List.of();
+        public Map<String,String> storedProperties(int x,int y,int z) {
+            int index=getAt(this.blocks.storage,this.blocks.bits,((long)y*this.blocks.sizeZ+z)*this.blocks.sizeX+x);
+            if(index>=0 && index<this.storedPalette.size()) return this.storedPalette.get(index).properties();
+            var result=new LinkedHashMap<String,String>(); var state=this.blocks.get(x,y,z);
+            for(var property:state.properties) result.put(property.name(),state.getValue(property.name()));
+            return result;
+        }
 
         Region(String name, Vec3i position, Vec3i size, BlockContainer blocks, Map<Long, NbtCompound> blockEntities) {
             this.name = name;
@@ -175,6 +195,8 @@ public final class LitematicaSchematic {
         public Vec3i absSize() {
             return new Vec3i(Math.abs(this.size.x()), Math.abs(this.size.y()), Math.abs(this.size.z()));
         }
+        /** Block storage starts at the minimum corner; saved entity Pos is relative to the first corner. */
+        public Vec3i blockOrigin(){return new Vec3i(position.x()+Math.min(0,size.x()+1),position.y()+Math.min(0,size.y()+1),position.z()+Math.min(0,size.z()+1));}
     }
 
     // ---------- the schematic ----------
@@ -185,7 +207,7 @@ public final class LitematicaSchematic {
 
     public static LitematicaSchematic load(Path file) throws IOException {
         if (!Files.isRegularFile(file)) throw new IOException("Not a file: " + file);
-        NbtCompound root = NbtFileUtils.readCompressedOrRaw(file);
+        NbtCompound root = NbtFileUtils.readSchematic(file);
         LitematicaSchematic schem = new LitematicaSchematic();
         schem.readFromData(root);
         return schem;
@@ -214,12 +236,15 @@ public final class LitematicaSchematic {
 
             // raw palette entries
             List<UnresolvedBlockState> rawPalette = readRawPalette(regionTag);
-            NbtScalars.NbtLongArray statesTag = regionTag.getLongArray("BlockStates").orElse(null);
-            if (statesTag == null) continue;
-            long[] storage = statesTag.value;
+            var statesTag = regionTag.get("BlockStates").orElse(null);
+            PackedLongArray storage=statesTag instanceof NbtPackedLongArray packed?packed.value
+                :statesTag instanceof NbtScalars.NbtLongArray dense?PackedLongArray.wrap(dense.value):null;
+            if (storage == null) continue;
             int bits = Math.max(2, 32 - Integer.numberOfLeadingZeros(Math.max(1, rawPalette.size() - 1)));
             Vec3i absSize = new Vec3i(Math.abs(size.x()), Math.abs(size.y()), Math.abs(size.z()));
             Region region = new Region(regionName, pos, size, null, readBlockEntities(regionTag, pos));
+            region.storedPalette = List.copyOf(rawPalette);
+            region.entities = SchematicEntity.read(regionTag,this.version);
             this.regions.put(regionName, region);
             this.rawContainers.put(regionName, new RawContainer(absSize.x(), absSize.y(), absSize.z(), bits, storage, rawPalette));
         }
@@ -228,7 +253,7 @@ public final class LitematicaSchematic {
     /** Raw (unresolved) container data, resolved once a BlockRegistry is available. */
     private final LinkedHashMap<String, RawContainer> rawContainers = new LinkedHashMap<>();
 
-    private record RawContainer(int sizeX, int sizeY, int sizeZ, int bits, long[] storage, List<UnresolvedBlockState> rawPalette) {}
+    private record RawContainer(int sizeX, int sizeY, int sizeZ, int bits, PackedLongArray storage, List<UnresolvedBlockState> rawPalette) {}
 
     public Metadata metadata() { return this.metadata; }
     public Map<String, Region> regions() { return this.regions; }

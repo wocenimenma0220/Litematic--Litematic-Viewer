@@ -1,0 +1,11 @@
+const fs=require('node:fs/promises'),path=require('node:path'),assert=require('node:assert/strict');
+const {SceneTransfer,crc32}=require('../../webapp/scene-transfer');
+(async()=>{const out=path.join(__dirname,'progressive-output/transfer');await fs.mkdir(out,{recursive:true});const overview=path.join(out,'overview'),detail=path.join(out,'detail');
+ await fs.writeFile(overview,Buffer.from('coarse'));const raw=Buffer.alloc(80,7);await fs.writeFile(detail,Buffer.concat([Buffer.alloc(64),raw]));const transfer=new SceneTransfer();
+ const coarse=await transfer.open(overview,17),fine=await transfer.open(detail,17,{retain:true,growing:true,committedBytes:64,key:'job'}),page={offset:64,bytes:80,rawBytes:80,quads:1,codec:0,checksum:crc32(raw)};
+ assert.equal(Buffer.from(await transfer.read(17,coarse.id,0,6)).toString(),'coarse');await assert.rejects(transfer.readPage(17,fine.id,page));
+ transfer.commit(18,'job',144);await assert.rejects(transfer.readPage(17,fine.id,page));transfer.commit(17,'job',144);assert.deepEqual(Buffer.from((await transfer.readPage(17,fine.id,page)).data),raw);
+ assert.equal(Buffer.from(await transfer.read(17,coarse.id,0,6)).toString(),'coarse');await assert.rejects(transfer.open(overview,17,{retain:true}));assert.throws(()=>transfer.commit(17,'job',80));
+ await transfer.close();await assert.rejects(transfer.read(17,coarse.id,0,1));await assert.rejects(transfer.readPage(17,fine.id,page));
+ console.log('PASS: live committed-byte boundary, two retained owner capabilities, growth, old overview reads, bounded handle count and stale rejection');
+})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -10,10 +10,13 @@ public final class RenderSettings {
     public int height = 1024;
     public boolean transparentBackground = true;
     public int backgroundColor = 0x00000000;
-    public boolean cullHiddenFaces = true;   // neighbor face culling
-    public boolean renderFluids = true;
+    public String backgroundMode = "color";
+    public Image backgroundImage;
+    public int checkerSize = 20;
     public float ambientShadeScale = 1.0f;   // multiplier on cardinal lighting
-    public boolean renderBlockEntities = false;  // v2 feature
+    public boolean lightingEnabled = true;
+    public boolean realLighting = false;   // opt in to 1.0.10 sky, emission and AO
+    public float previewZoom = 1f;
 
     /**
      * Animation tick used for animated textures, in game ticks.

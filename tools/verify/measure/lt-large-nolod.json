@@ -1,0 +1,98 @@
+{
+  "atlas_mib": 0.0012969970703125,
+  "backend": "Vulkan",
+  "benchmark": {
+    "final_gpu_geometry_mib": 53.178565979003906,
+    "frames": 60,
+    "max_ms": 17.5843,
+    "mean_draw_calls": 2733.0,
+    "mean_drawn_triangles": 3562966.0,
+    "mean_fps": 91.32311671185637,
+    "mean_lod_chunks": [
+      0.0,
+      2044.0,
+      0.0,
+      0.0
+    ],
+    "mean_lod_uploads": 0.0,
+    "mean_ms": 10.950130000000001,
+    "median_ms": 11.300899999999999,
+    "method": "1920x1080 (unless overridden), full 360-degree orbit with entire AABB fitted at every angle, per-frame CPU submission + GPU completion wait; no UI/vsync; loading and PNG readback excluded",
+    "p95_ms": 13.790099999999999,
+    "warmup_frames": 30
+  },
+  "blocks": 18948750,
+  "chunks": 2044,
+  "cpu_geometry_mib": 68.4263916015625,
+  "device_type": "IntegratedGpu",
+  "dimensions": [
+    1178,
+    253,
+    950
+  ],
+  "export": null,
+  "fast_lod": true,
+  "file": "D:\\litematic-display\\璃月港.litematic",
+  "first_image_seconds": 4.3290159,
+  "first_visible_seconds": 3.6121799,
+  "format": "litematic",
+  "geometry_mib": 53.178565979003906,
+  "geometry_mib_default_view": 53.178565979003906,
+  "geometry_mib_lod0": null,
+  "gpu": "Intel(R) Arc(TM) Graphics",
+  "gpu_upload_seconds": 0.16314549999999994,
+  "initial_drawn_triangles": 3562966,
+  "initial_visible_chunks": 2044,
+  "load_to_ready_seconds": 4.318377,
+  "lod_comparisons": [],
+  "max_upload_batch_chunks": 16,
+  "mesh_seconds": 0.5049289,
+  "missing_model_types": 1,
+  "name": "Unnamed",
+  "output": "D:\\litematic-display\\render\\litematic-render\\tools\\verify\\measure\\lt-large-nolod.png",
+  "preparation_seconds": 3.6002879,
+  "progressive_frames_before_load_complete": 186,
+  "progressive_mean_drawn_triangles": 1627388.0537634408,
+  "progressive_mean_lod_chunks": [
+    0.0,
+    860.9301075268817,
+    0.0,
+    0.0
+  ],
+  "read_seconds": 1.6200276,
+  "regions": 1,
+  "render_settings": {
+    "atlas_mip_levels": 4,
+    "depth": "reversed-Z float32",
+    "lod_base_chunks": 16,
+    "lod_base_distance_blocks": 512,
+    "lod_distance_rule": "nearest eye-to-chunk-AABB distance: LOD0 < base, LOD1 < 2x, LOD2 < 4x, otherwise LOD3",
+    "lod_distance_thresholds_blocks": [
+      0,
+      512,
+      1024,
+      2048
+    ],
+    "lod_enabled": false,
+    "lod_override": null,
+    "lod_triangles": [
+      0,
+      3562966,
+      812812,
+      213192
+    ],
+    "msaa_samples": 4
+  },
+  "rendered_chunks_before_load_complete": 2044,
+  "resolution": [
+    1024,
+    1024
+  ],
+  "resource_pack": "D:\\litematic-display\\EnhancedBlockEntities-1.21.4\\.gradle\\loom-cache\\minecraftMaven\\net\\minecraft\\minecraft-merged-367e2792d9\\26.3\\minecraft-merged-367e2792d9-26.3.jar",
+  "stream_chunks": 2044,
+  "stream_mesh_seconds": 0.5049289,
+  "stream_mesh_seconds_note": "Includes time blocked while sending chunks through the bounded channel; this is not CPU meshing time alone.",
+  "triangles": 0,
+  "upload_batch_limit": 16,
+  "workers": 8
+}

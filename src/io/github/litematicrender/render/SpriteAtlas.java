@@ -47,15 +47,53 @@ public final class SpriteAtlas {
 
     public final String id;   // "blocks" or "items"
     private final Map<String, SpriteContents> sprites = new HashMap<>();
+    private final Map<String, SpriteContents> baseSprites = new HashMap<>();
+    private final Map<String, int[]> generatedPixels = new HashMap<>();
+    private final Map<String, Long> generatedSizes = new HashMap<>();
     private final Map<String, Entry> entries = new HashMap<>();
-    public final Image stitched;
+    public Image stitched;
     public final int padding;
+    /** Independent atlas for color-only previews; never mutates the complete scene atlas. */
+    public static SpriteAtlas overview() {
+        Image white=new Image(1,1);white.pixels()[0]=0xffffffff;
+        return new SpriteAtlas("overview",Map.of("litematicrender:overview",new SpriteContents("litematicrender:overview",1,1,white,1,1,List.of(0),false)),0);
+    }
+
+    /** Restitch scene-generated text and skins so CPU export and WebGL use the same pixels. */
+    public void replaceGeneratedSprites(Map<String, Image> images) {
+        boolean identical = images.size() == this.generatedPixels.size();
+        if (identical) for (var item : images.entrySet()) {
+            Image image = item.getValue();
+            long size = ((long) image.width << 32) | image.height;
+            if (!Long.valueOf(size).equals(this.generatedSizes.get(item.getKey()))
+                || !java.util.Arrays.equals(image.pixels(), this.generatedPixels.get(item.getKey()))) {
+                identical = false; break;
+            }
+        }
+        if (identical) return;
+        Map<String, SpriteContents> combined = new HashMap<>(this.baseSprites);
+        images.forEach((id, image) -> combined.put(id,
+            new SpriteContents(id, image.width, image.height, image, 1, 1, List.of(0), false)));
+        SpriteAtlas rebuilt = new SpriteAtlas(this.id, combined, this.padding);
+        this.sprites.clear(); this.sprites.putAll(rebuilt.sprites);
+        this.entries.clear(); this.entries.putAll(rebuilt.entries);
+        this.stitched = rebuilt.stitched;
+        this.generatedPixels.clear(); this.generatedSizes.clear();
+        images.forEach((name,image) -> {
+            this.generatedPixels.put(name,image.pixels().clone());
+            this.generatedSizes.put(name,((long)image.width << 32) | image.height);
+        });
+        this.regionTransparency.clear();
+        this.bakedTick = 0;
+        this.sprites.values().forEach(sprite -> sprite.lastBakedFrame = sprite.frameAtTick(0));
+    }
     /** Animation tick currently baked into {@link #stitched}. */
     private int bakedTick;
 
     private SpriteAtlas(String id, Map<String, SpriteContents> loaded, int padding) {
         this.id = id;
         this.padding = padding;
+        this.baseSprites.putAll(loaded);
         // stitch: simple shelf packing, sorted by height desc (vanilla-ish greedy)
         List<SpriteContents> sorted = new ArrayList<>(loaded.values());
         sorted.sort((a, b) -> {
@@ -86,8 +124,12 @@ public final class SpriteAtlas {
                 crow = 0;
             }
             int px = cx + pad, py = cy + pad;
-            // Bake frame 0; rebakeAtTick() re-blits the animated ones in place.
-            s.sheet.blitTo(this.stitched, 0, 0, px, py, s.frameWidth, s.frameHeight);
+            // Tick zero follows metadata order: fire starts at source frame 16, not frame 0.
+            int firstFrame=s.frameAtTick(0);
+            s.sheet.blitTo(this.stitched,s.frameX(firstFrame)*s.frameWidth,s.frameY(firstFrame)*s.frameHeight,
+                px,py,s.frameWidth,s.frameHeight);
+            extrude(px,py,s.frameWidth,s.frameHeight);
+            s.lastBakedFrame=firstFrame;
             float u0 = (float) px / width;
             float v0 = (float) py / height;
             float u1 = (float) (px + s.frameWidth) / width;
@@ -125,10 +167,20 @@ public final class SpriteAtlas {
                     this.stitched.setPixel(px + x, py + y, s.framePixel(frame, x, y));
                 }
             }
+            extrude(px,py,s.frameWidth,s.frameHeight);
             changed++;
         }
         this.bakedTick = tick;
         return changed;
+    }
+
+    /** MSAA extrapolates UVs just past edges; repeat edge texels into the gutter so
+     * opaque walls stay closed and adjacent atlas sprites cannot bleed into them. */
+    private void extrude(int x,int y,int width,int height) {
+        for(int dy=-padding;dy<height+padding;dy++)for(int dx=-padding;dx<width+padding;dx++) {
+            if(dx>=0&&dx<width&&dy>=0&&dy<height)continue;
+            stitched.setPixel(x+dx,y+dy,stitched.pixel(x+Math.max(0,Math.min(width-1,dx)),y+Math.max(0,Math.min(height-1,dy))));
+        }
     }
 
     /** The tick whose animation frame is currently baked into {@link #stitched}. */
@@ -136,34 +188,25 @@ public final class SpriteAtlas {
         return this.bakedTick;
     }
 
-    /** Longest animation in the atlas, in ticks (0 when nothing animates). */
-    public int animationPeriodTicks() {
-        int best = 0;
-        for (Entry e : this.entries.values()) {
-            SpriteContents s = e.contents;
-            if (!s.isAnimated()) continue;
-            best = Math.max(best, s.frames.size() * Math.max(1, s.frameTime));
+    public record AnimationCycle(int frames, boolean complete) {}
+    /** Choose a common cycle of only the textures actually used by this scene. */
+    public AnimationCycle animationCycle(io.github.litematicrender.render.scene.SceneMesh mesh, int limit) {
+        int maximum=Math.max(1,limit);
+        long period=1;
+        java.util.Set<String> used=new java.util.HashSet<>();
+        for(var layer:List.of(mesh.solid,mesh.cutout,mesh.portal,mesh.fluid,mesh.translucent))
+            for(var quad:layer)if(quad.spriteId!=null)used.add(quad.spriteId);
+        for(String id:used) {
+            SpriteContents sprite=this.sprites.get(id);
+            if(sprite==null || !sprite.isAnimated())continue;
+            long duration=(long)sprite.frames.size()*Math.max(1,sprite.frameTime);
+            long a=period,b=duration;
+            while(b!=0){long rest=a%b;a=b;b=rest;}
+            long common=period/a;
+            if(common>maximum/duration)return new AnimationCycle(maximum,false);
+            period=common*duration;
         }
-        return best;
-    }
-
-    /**
-     * Shortest animation period above a trivial length, in ticks.
-     *
-     * <p>This is the cycle an animation export should follow: it is the fastest thing a viewer
-     * notices, and looping it keeps that motion smooth. Periods of one or two ticks are ignored
-     * because they read as flicker rather than animation.
-     */
-    public int shortestAnimationPeriodTicks() {
-        int best = 0;
-        for (Entry e : this.entries.values()) {
-            SpriteContents s = e.contents;
-            if (!s.isAnimated()) continue;
-            int period = s.frames.size() * Math.max(1, s.frameTime);
-            if (period < 4) continue;
-            best = (best == 0) ? period : Math.min(best, period);
-        }
-        return best;
+        return new AnimationCycle((int)period,true);
     }
 
     /** Returns [totalHeight] for shelf packing into the given width. */
@@ -191,6 +234,49 @@ public final class SpriteAtlas {
     public Optional<Entry> get(String spriteId) {
         return Optional.ofNullable(this.entries.get(spriteId));
     }
+
+    /**
+     * The transparency of the sprite region one face samples — vanilla
+     * {@code FaceBakery.computeMaterialTransparency}, which is what
+     * {@code ChunkSectionLayer.byTransparency} is ultimately fed.
+     *
+     * <p>The region matters, not just the sprite. A sheet can be transparent around the edges and
+     * opaque where a particular face's UV lands, and vanilla scores that face as solid. Judging by
+     * the whole sprite instead pushes it into the cutout bucket, where it stops writing depth like
+     * solid geometry and becomes subject to the terrain shader's alpha cutoff.
+     *
+     * <p>Results are memoised: a schematic has far fewer distinct (sprite, UV rectangle) pairs than
+     * quads, and the region test reads every texel it covers.
+     *
+     * @param forceTranslucent the material's {@code "force_translucent": true}
+     */
+    public Transparency transparencyOf(String spriteId, float u0, float v0, float u1, float v1,
+                                       float u2, float v2, float u3, float v3,
+                                       boolean forceTranslucent) {
+        // Vanilla short-circuits on the material flag before it ever looks at the pixels.
+        if (forceTranslucent) return Transparency.TRANSLUCENT;
+        Entry e = spriteId == null ? null : this.entries.get(spriteId);
+        if (e == null) return Transparency.NONE;
+
+        float minU = Math.min(Math.min(u0, u1), Math.min(u2, u3));
+        float minV = Math.min(Math.min(v0, v1), Math.min(v2, v3));
+        float maxU = Math.max(Math.max(u0, u1), Math.max(u2, u3));
+        float maxV = Math.max(Math.max(v0, v1), Math.max(v2, v3));
+
+        // Whole-frame fast path: the overwhelmingly common case, already cached on the contents.
+        if (minU <= 0f && minV <= 0f && maxU >= 1f && maxV >= 1f) {
+            return Transparency.of(e.contents.hasTransparent, e.contents.hasTranslucent);
+        }
+        // Quantise so near-identical rectangles share a cache entry; 1/64 of a sprite is far below
+        // the precision any UV range in a model JSON expresses.
+        String key = spriteId + '|' + Math.round(minU * 64) + ',' + Math.round(minV * 64) + ','
+            + Math.round(maxU * 64) + ',' + Math.round(maxV * 64);
+        return this.regionTransparency.computeIfAbsent(key,
+            k -> e.contents.transparencyIn(minU, minV, maxU, maxV));
+    }
+
+    /** Memo for {@link #transparencyOf}; keyed by sprite id plus the quantised UV rectangle. */
+    private final Map<String, Transparency> regionTransparency = new java.util.concurrent.ConcurrentHashMap<>();
 
     public SpriteContents getOrMissing(String spriteId) {
         SpriteContents s = this.sprites.get(spriteId);

@@ -53,6 +53,12 @@ public final class ModelBaker {
     }
 
     private final ResourceManager resources;
+    public ResourceManager resources() { return this.resources; }
+    private io.github.litematicrender.render.FontRenderer fontRenderer;
+    public synchronized io.github.litematicrender.render.FontRenderer fontRenderer() {
+        if(this.fontRenderer==null)this.fontRenderer=io.github.litematicrender.render.FontRenderer.load(this.resources);
+        return this.fontRenderer;
+    }
     private final Map<String, ModelDefinition> definitions = new ConcurrentHashMap<>();
     private final Map<String, BakedModel> bakedCache = new ConcurrentHashMap<>();
     /** blockId -> BlockInfo (from BlockRegistry) */

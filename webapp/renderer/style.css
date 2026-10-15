@@ -36,6 +36,7 @@ html, body {
   -webkit-app-region: drag;
 }
 .appname { font-weight: 600; font-size: 12px; color: var(--muted); }
+.brand-icon { width: 22px; height: 22px; border-radius: 4px; }
 .menu { position: relative; -webkit-app-region: no-drag; }
 .menubtn {
   padding: 3px 12px;
@@ -98,8 +99,21 @@ html, body {
 
 /* ---------------------------------------------------------------- sidebar */
 
+.sidebar-shell { position: relative; width: 300px; flex: 0 0 300px; min-height: 0; }
+.sidebar-shell.collapsed { width: 0; flex-basis: 0; }
+.sidebar-shell.collapsed .sidebar { display: none; }
+.sidebar-toggle {
+  position: absolute; right: -14px; top: 50%; transform: translateY(-50%);
+  width: 28px; height: 64px; padding: 0; font-size: 24px; line-height: 1;
+  border-radius: 8px; z-index: 30; background: var(--panel-2);
+  box-shadow: 0 2px 10px #0005;
+}
+.sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sidebar-shell.collapsed .sidebar-toggle { left: 0; right: auto; }
+
 .sidebar {
   width: 300px;
+  height: 100%;
   flex: 0 0 300px;
   min-width: 0;
   background: var(--panel);
@@ -133,6 +147,11 @@ html, body {
 .val { color: var(--text); font-variant-numeric: tabular-nums; }
 
 input[type="range"] { width: 100%; accent-color: var(--accent); }
+.distance-controls { display:flex;align-items:center;gap:8px; }
+.distance-controls input[type="range"] { flex:1;min-width:0; }
+.distance-controls input[type="number"] { width:65px;padding:5px;border:1px solid var(--line);border-radius:5px;background:var(--panel-2);color:var(--text);font:inherit; }
+#geometryBudget { width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:5px;background:var(--panel-2);color:var(--text);font:inherit; }
+.skinplayer { width: 100%; padding: 7px 8px; margin: 0 0 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
 select, input[type="color"] {
   width: 100%; padding: 6px 8px; border-radius: 6px;
   border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
@@ -191,6 +210,16 @@ button.primary:hover:not(:disabled) { background: #3a6fc4; }
   background-size: 20px 20px;
   background-position: 0 0, 0 10px, 10px -10px, -10px 0;
 }
+.viewport.image-background { background-color: #22262e; background-size: cover; background-position: center; background-repeat: no-repeat; }
+.toolbar-button { padding: 4px 8px; font-size: 11px; white-space: nowrap; }
+#stats { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.welcome-dialog { width: min(420px, calc(100vw - 40px)); border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); padding: 28px; text-align: center; box-shadow: 0 20px 70px #0008; }
+.welcome-dialog::backdrop { background: #0009; }
+.welcome-dialog h2 { margin: 12px 0 18px; font-size: 20px; }
+.welcome-icon { width: 72px; height: 72px; border-radius: 14px; }
+.welcome-dialog a { color: #80b4ff; text-decoration: underline; }
+.welcome-actions { display: flex; justify-content: center; gap: 10px; margin-top: 24px; }
+.welcome-error { color: var(--err); font-size: 12px; }
 .viewport img {
   max-width: 100%; max-height: 100%; object-fit: contain;
   /*
@@ -204,6 +233,7 @@ button.primary:hover:not(:disabled) { background: #3a6fc4; }
 }
 /* A dragging frame is rendered smaller on purpose; stretching it keeps the composition steady. */
 .viewport img.upscaled { image-rendering: auto; }
+#preview { width: 100%; height: 100%; }
 /* Drag to rotate; the cursor and transform are driven from renderer.js. */
 .viewport { cursor: grab; touch-action: none; }
 .viewport.grabbing { cursor: grabbing; }
@@ -215,8 +245,25 @@ button.primary:hover:not(:disabled) { background: #3a6fc4; }
  * showed only the canvas's top-left corner: the model looked pushed off to the bottom-right even
  * though the projection was correct. */
 .glcanvas { display: block; position: absolute; left: 0; top: 0; }
-/* While flying, hide the pointer so it does not fight the look-around drag. */
-body.flying .viewport { cursor: none; }
+body.flying .viewport { cursor: default; }
+body.flying.mouse-look .viewport { cursor: none; }
+.viewport .crosshair { position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; transform: translate(-50%, -50%); pointer-events: none; z-index: 12; mix-blend-mode: difference; image-rendering: pixelated; }
+.block-inspector { position: absolute; top: 12px; right: 12px; width: min(340px, calc(100% - 40px)); max-height: calc(100% - 24px); overflow: auto; z-index: 15; padding: 14px; background: #1b1e24f5; border: 1px solid #4b5668; border-radius: 10px; box-shadow: 0 5px 25px #0006; cursor: default; touch-action: auto; user-select: text; }
+.inspector-header { display: flex; gap: 10px; align-items: flex-start; }
+.inspector-header h2 { flex: 1; margin: 0; font-size: 15px; }
+#inspectClose { padding: 1px 7px; font-size: 18px; }
+.block-inspector h3 { font-size: 12px; margin: 16px 0 8px; color: #b9c4d6; }
+.block-inspector p { margin: 5px 0; overflow-wrap: anywhere; }
+.block-inspector dl { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(100px, 1.5fr); gap: 4px 10px; margin: 0; font-size: 12px; }
+.block-inspector dt { color: var(--muted); overflow-wrap: anywhere; }
+.block-inspector dd { margin: 0; overflow-wrap: anywhere; }
+.inventory-item { width: 100%; display: grid; grid-template-columns: 30px 32px 1fr auto; align-items: center; gap: 7px; text-align: left; padding: 5px 6px; margin: 4px 0; }
+.inventory-item .item-icon { width: 28px; height: 28px; object-fit: contain; image-rendering: pixelated; }
+.inventory-item .item-slot { font-size: 10px; color: var(--muted); }
+.inventory-item .item-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.block-inspector details { margin-top: 12px; font-size: 12px; }
+.block-inspector summary { cursor: pointer; color: #a9c9fc; }
+.block-inspector pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px; background: #11141a; border-radius: 5px; font: 11px/1.5 Consolas, monospace; }
 
 .placeholder { color: var(--muted); font-size: 13px; }
 
@@ -251,3 +298,31 @@ body.flying .viewport { cursor: none; }
   width: auto;
   padding: 2px 6px;
 }
+
+.viewport .coordinates { position: absolute; top: 12px; left: 12px; padding: 7px 10px; border-radius: 6px; background: #141820cc; color: #fff; font: 13px monospace; pointer-events: none; z-index: 13; }
+
+.lighting-controls { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.lighting-controls .check { margin: 0; }
+
+.material-dialog { width: min(1080px, 92vw); max-height: 88vh; color: #e6e9ef; background: #20242c; border: 1px solid #475366; border-radius: 12px; padding: 22px; }
+.material-dialog::backdrop { background: #0009; }
+.material-header,.material-export { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.material-header h2 { margin: 0; }.material-header button { width: 36px; }
+.material-dialog input[type=search] { width: 100%; margin: 12px 0; }
+.material-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.material-lists h3 { margin: 4px 0 10px; }.material-table { max-height: 46vh; overflow: auto; border: 1px solid #3a4353; border-radius: 6px; }
+.material-table table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.material-table th { position: sticky; top: 0; background: #294f73; text-align: left; padding: 9px; }
+.material-table td { padding: 9px; border-bottom: 1px solid #343d4d; }.material-table td small { display: block; color: #a3adbf; overflow-wrap: anywhere; }
+.material-table td:nth-child(n+3) { text-align: right; white-space: nowrap; }
+.material-table th:first-child { width: 40px; padding-right: 0; }
+.material-table .material-icon { width: 40px; padding-right: 0; text-align: center; }
+.material-icon img { width: 40px; height: 40px; display: block; image-rendering: pixelated; }
+.material-icon .material-icon-empty { color: #8a96a9; font-size: 22px; }
+.material-section-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 38px; margin-bottom: 8px; }
+.material-section-title h3 { margin: 0; }.material-section-title button { padding: 5px 9px; font-size: 12px; white-space: nowrap; }
+.material-export { margin-top: 14px; flex-wrap: wrap; }.material-export label { display: flex; align-items: center; gap: 8px; }
+
+.material-dialog input[type=search] { color: #e6e9ef; background: #161b23; border: 1px solid #475366; border-radius: 6px; padding: 10px 12px; box-sizing: border-box; }
+.material-export label { white-space: nowrap; }
+#materialStatus { overflow-wrap: anywhere; }

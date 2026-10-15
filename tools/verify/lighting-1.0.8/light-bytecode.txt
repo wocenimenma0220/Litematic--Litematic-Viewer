@@ -1,0 +1,1305 @@
+Compiled from "LightVolume.java"
+public final class io.github.litematicrender.render.scene.LightVolume {
+  private final int sx;
+
+  private final int sy;
+
+  private final int sz;
+
+  private final io.github.litematicrender.world.BlockState[] cells;
+
+  private final io.github.litematicrender.world.BlockShape shapes;
+
+  private final byte[] sky;
+
+  private final byte[] block;
+
+  private int maxEmission;
+
+  private static final float AMBIENT;
+
+  private static final float BLOCK_TINT_R;
+
+  private static final float BLOCK_TINT_G;
+
+  private static final float BLOCK_TINT_B;
+
+  private static final java.util.Map<java.lang.String, java.lang.Integer> EMISSIONS;
+
+  public io.github.litematicrender.render.scene.LightVolume(int, int, int, io.github.litematicrender.world.BlockState[], io.github.litematicrender.world.BlockShape);
+    Code:
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: iload_1
+         6: putfield      #7                  // Field sx:I
+         9: aload_0
+        10: iload_2
+        11: putfield      #13                 // Field sy:I
+        14: aload_0
+        15: iload_3
+        16: putfield      #16                 // Field sz:I
+        19: aload_0
+        20: aload         4
+        22: putfield      #19                 // Field cells:[Lio/github/litematicrender/world/BlockState;
+        25: aload_0
+        26: aload         5
+        28: putfield      #23                 // Field shapes:Lio/github/litematicrender/world/BlockShape;
+        31: aload_0
+        32: iload_1
+        33: iload_2
+        34: imul
+        35: iload_3
+        36: imul
+        37: newarray       byte
+        39: putfield      #27                 // Field sky:[B
+        42: aload_0
+        43: iload_1
+        44: iload_2
+        45: imul
+        46: iload_3
+        47: imul
+        48: newarray       byte
+        50: putfield      #31                 // Field block:[B
+        53: return
+
+  private int idx(int, int, int);
+    Code:
+         0: iload_2
+         1: aload_0
+         2: getfield      #16                 // Field sz:I
+         5: imul
+         6: iload_3
+         7: iadd
+         8: aload_0
+         9: getfield      #7                  // Field sx:I
+        12: imul
+        13: iload_1
+        14: iadd
+        15: ireturn
+
+  private boolean inside(int, int, int);
+    Code:
+         0: iload_1
+         1: iflt          40
+         4: iload_2
+         5: iflt          40
+         8: iload_3
+         9: iflt          40
+        12: iload_1
+        13: aload_0
+        14: getfield      #7                  // Field sx:I
+        17: if_icmpge     40
+        20: iload_2
+        21: aload_0
+        22: getfield      #13                 // Field sy:I
+        25: if_icmpge     40
+        28: iload_3
+        29: aload_0
+        30: getfield      #16                 // Field sz:I
+        33: if_icmpge     40
+        36: iconst_1
+        37: goto          41
+        40: iconst_0
+        41: ireturn
+
+  private io.github.litematicrender.world.BlockState at(int, int, int);
+    Code:
+         0: aload_0
+         1: getfield      #19                 // Field cells:[Lio/github/litematicrender/world/BlockState;
+         4: aload_0
+         5: iload_1
+         6: iload_2
+         7: iload_3
+         8: invokevirtual #34                 // Method idx:(III)I
+        11: aaload
+        12: areturn
+
+  private boolean opaque(int, int, int);
+    Code:
+         0: aload_0
+         1: getfield      #23                 // Field shapes:Lio/github/litematicrender/world/BlockShape;
+         4: aload_0
+         5: iload_1
+         6: iload_2
+         7: iload_3
+         8: invokevirtual #38                 // Method at:(III)Lio/github/litematicrender/world/BlockState;
+        11: invokevirtual #42                 // Method io/github/litematicrender/world/BlockShape.occludes:(Lio/github/litematicrender/world/BlockState;)Z
+        14: ireturn
+
+  private boolean permeable(int, int, int);
+    Code:
+         0: aload_0
+         1: getfield      #23                 // Field shapes:Lio/github/litematicrender/world/BlockShape;
+         4: aload_0
+         5: iload_1
+         6: iload_2
+         7: iload_3
+         8: invokevirtual #38                 // Method at:(III)Lio/github/litematicrender/world/BlockState;
+        11: invokevirtual #48                 // Method io/github/litematicrender/world/BlockShape.lightPermeable:(Lio/github/litematicrender/world/BlockState;)Z
+        14: ireturn
+
+  public void compute();
+    Code:
+         0: aload_0
+         1: invokevirtual #51                 // Method seedSky:()V
+         4: aload_0
+         5: invokevirtual #54                 // Method spreadSky:()V
+         8: aload_0
+         9: invokevirtual #57                 // Method seedBlock:()V
+        12: aload_0
+        13: invokevirtual #60                 // Method spreadBlock:()V
+        16: return
+
+  private void seedSky();
+    Code:
+         0: iconst_0
+         1: istore_1
+         2: iload_1
+         3: aload_0
+         4: getfield      #16                 // Field sz:I
+         7: if_icmpge     93
+        10: iconst_0
+        11: istore_2
+        12: iload_2
+        13: aload_0
+        14: getfield      #7                  // Field sx:I
+        17: if_icmpge     87
+        20: aload_0
+        21: getfield      #13                 // Field sy:I
+        24: iconst_1
+        25: isub
+        26: istore_3
+        27: iload_3
+        28: iflt          47
+        31: aload_0
+        32: iload_2
+        33: iload_3
+        34: iload_1
+        35: invokevirtual #63                 // Method permeable:(III)Z
+        38: ifne          47
+        41: iinc          3, -1
+        44: goto          27
+        47: iload_3
+        48: iflt          81
+        51: aload_0
+        52: iload_2
+        53: iload_3
+        54: iload_1
+        55: invokevirtual #63                 // Method permeable:(III)Z
+        58: ifeq          75
+        61: aload_0
+        62: getfield      #27                 // Field sky:[B
+        65: aload_0
+        66: iload_2
+        67: iload_3
+        68: iload_1
+        69: invokevirtual #34                 // Method idx:(III)I
+        72: bipush        15
+        74: bastore
+        75: iinc          3, -1
+        78: goto          47
+        81: iinc          2, 1
+        84: goto          12
+        87: iinc          1, 1
+        90: goto          2
+        93: return
+
+  private void spreadSky();
+    Code:
+         0: aload_0
+         1: getfield      #27                 // Field sky:[B
+         4: arraylength
+         5: newarray       int
+         7: astore_1
+         8: aload_0
+         9: getfield      #27                 // Field sky:[B
+        12: arraylength
+        13: newarray       int
+        15: astore_2
+        16: aload_0
+        17: getfield      #27                 // Field sky:[B
+        20: arraylength
+        21: newarray       int
+        23: astore_3
+        24: iconst_0
+        25: istore        4
+        27: iconst_0
+        28: istore        5
+        30: iconst_0
+        31: istore        6
+        33: iload         6
+        35: aload_0
+        36: getfield      #27                 // Field sky:[B
+        39: arraylength
+        40: if_icmpge     106
+        43: aload_0
+        44: getfield      #27                 // Field sky:[B
+        47: iload         6
+        49: baload
+        50: iconst_1
+        51: if_icmple     100
+        54: aload_1
+        55: iload         5
+        57: iload         6
+        59: aload_0
+        60: getfield      #7                  // Field sx:I
+        63: irem
+        64: iastore
+        65: aload_2
+        66: iload         5
+        68: iload         6
+        70: aload_0
+        71: getfield      #7                  // Field sx:I
+        74: idiv
+        75: aload_0
+        76: getfield      #16                 // Field sz:I
+        79: idiv
+        80: iastore
+        81: aload_3
+        82: iload         5
+        84: iload         6
+        86: aload_0
+        87: getfield      #7                  // Field sx:I
+        90: idiv
+        91: aload_0
+        92: getfield      #16                 // Field sz:I
+        95: irem
+        96: iastore
+        97: iinc          5, 1
+       100: iinc          6, 1
+       103: goto          33
+       106: bipush        6
+       108: anewarray     #67                 // class "[I"
+       111: dup
+       112: iconst_0
+       113: iconst_3
+       114: newarray       int
+       116: dup
+       117: iconst_0
+       118: iconst_1
+       119: iastore
+       120: dup
+       121: iconst_1
+       122: iconst_0
+       123: iastore
+       124: dup
+       125: iconst_2
+       126: iconst_0
+       127: iastore
+       128: aastore
+       129: dup
+       130: iconst_1
+       131: iconst_3
+       132: newarray       int
+       134: dup
+       135: iconst_0
+       136: iconst_m1
+       137: iastore
+       138: dup
+       139: iconst_1
+       140: iconst_0
+       141: iastore
+       142: dup
+       143: iconst_2
+       144: iconst_0
+       145: iastore
+       146: aastore
+       147: dup
+       148: iconst_2
+       149: iconst_3
+       150: newarray       int
+       152: dup
+       153: iconst_0
+       154: iconst_0
+       155: iastore
+       156: dup
+       157: iconst_1
+       158: iconst_1
+       159: iastore
+       160: dup
+       161: iconst_2
+       162: iconst_0
+       163: iastore
+       164: aastore
+       165: dup
+       166: iconst_3
+       167: iconst_3
+       168: newarray       int
+       170: dup
+       171: iconst_0
+       172: iconst_0
+       173: iastore
+       174: dup
+       175: iconst_1
+       176: iconst_m1
+       177: iastore
+       178: dup
+       179: iconst_2
+       180: iconst_0
+       181: iastore
+       182: aastore
+       183: dup
+       184: iconst_4
+       185: iconst_3
+       186: newarray       int
+       188: dup
+       189: iconst_0
+       190: iconst_0
+       191: iastore
+       192: dup
+       193: iconst_1
+       194: iconst_0
+       195: iastore
+       196: dup
+       197: iconst_2
+       198: iconst_1
+       199: iastore
+       200: aastore
+       201: dup
+       202: iconst_5
+       203: iconst_3
+       204: newarray       int
+       206: dup
+       207: iconst_0
+       208: iconst_0
+       209: iastore
+       210: dup
+       211: iconst_1
+       212: iconst_0
+       213: iastore
+       214: dup
+       215: iconst_2
+       216: iconst_m1
+       217: iastore
+       218: aastore
+       219: astore        6
+       221: iload         4
+       223: iload         5
+       225: if_icmpge     513
+       228: aload_1
+       229: iload         4
+       231: iaload
+       232: istore        7
+       234: aload_2
+       235: iload         4
+       237: iaload
+       238: istore        8
+       240: aload_3
+       241: iload         4
+       243: iaload
+       244: istore        9
+       246: iinc          4, 1
+       249: aload_0
+       250: getfield      #27                 // Field sky:[B
+       253: aload_0
+       254: iload         7
+       256: iload         8
+       258: iload         9
+       260: invokevirtual #34                 // Method idx:(III)I
+       263: baload
+       264: istore        10
+       266: iload         10
+       268: iconst_1
+       269: if_icmpgt     275
+       272: goto          221
+       275: aload         6
+       277: astore        11
+       279: aload         11
+       281: arraylength
+       282: istore        12
+       284: iconst_0
+       285: istore        13
+       287: iload         13
+       289: iload         12
+       291: if_icmpge     510
+       294: aload         11
+       296: iload         13
+       298: aaload
+       299: astore        14
+       301: iload         7
+       303: aload         14
+       305: iconst_0
+       306: iaload
+       307: iadd
+       308: istore        15
+       310: iload         8
+       312: aload         14
+       314: iconst_1
+       315: iaload
+       316: iadd
+       317: istore        16
+       319: iload         9
+       321: aload         14
+       323: iconst_2
+       324: iaload
+       325: iadd
+       326: istore        17
+       328: aload_0
+       329: iload         15
+       331: iload         16
+       333: iload         17
+       335: invokevirtual #69                 // Method inside:(III)Z
+       338: ifeq          504
+       341: aload_0
+       342: iload         15
+       344: iload         16
+       346: iload         17
+       348: invokevirtual #63                 // Method permeable:(III)Z
+       351: ifne          357
+       354: goto          504
+       357: aload         14
+       359: iconst_1
+       360: iaload
+       361: iconst_m1
+       362: if_icmpne     376
+       365: iload         10
+       367: bipush        15
+       369: if_icmpne     376
+       372: iconst_1
+       373: goto          377
+       376: iconst_0
+       377: istore        18
+       379: aload_0
+       380: iload         15
+       382: iload         16
+       384: iload         17
+       386: invokevirtual #38                 // Method at:(III)Lio/github/litematicrender/world/BlockState;
+       389: astore        19
+       391: iload         18
+       393: ifeq          400
+       396: iconst_0
+       397: goto          423
+       400: aload         19
+       402: ifnull        422
+       405: aload         19
+       407: getfield      #72                 // Field io/github/litematicrender/world/BlockState.blockId:Ljava/lang/String;
+       410: ldc           #78                 // String minecraft:water
+       412: invokevirtual #80                 // Method java/lang/String.equals:(Ljava/lang/Object;)Z
+       415: ifeq          422
+       418: iconst_2
+       419: goto          423
+       422: iconst_1
+       423: istore        20
+       425: iload         10
+       427: iload         20
+       429: isub
+       430: istore        21
+       432: iload         21
+       434: aload_0
+       435: getfield      #27                 // Field sky:[B
+       438: aload_0
+       439: iload         15
+       441: iload         16
+       443: iload         17
+       445: invokevirtual #34                 // Method idx:(III)I
+       448: baload
+       449: if_icmple     504
+       452: aload_0
+       453: getfield      #27                 // Field sky:[B
+       456: aload_0
+       457: iload         15
+       459: iload         16
+       461: iload         17
+       463: invokevirtual #34                 // Method idx:(III)I
+       466: iload         21
+       468: i2b
+       469: bastore
+       470: iload         21
+       472: iconst_1
+       473: if_icmple     504
+       476: iload         5
+       478: aload_1
+       479: arraylength
+       480: if_icmpge     504
+       483: aload_1
+       484: iload         5
+       486: iload         15
+       488: iastore
+       489: aload_2
+       490: iload         5
+       492: iload         16
+       494: iastore
+       495: aload_3
+       496: iload         5
+       498: iload         17
+       500: iastore
+       501: iinc          5, 1
+       504: iinc          13, 1
+       507: goto          287
+       510: goto          221
+       513: return
+
+  private void seedBlock();
+    Code:
+         0: iconst_0
+         1: istore_1
+         2: iload_1
+         3: aload_0
+         4: getfield      #19                 // Field cells:[Lio/github/litematicrender/world/BlockState;
+         7: arraylength
+         8: if_icmpge     78
+        11: aload_0
+        12: getfield      #19                 // Field cells:[Lio/github/litematicrender/world/BlockState;
+        15: iload_1
+        16: aaload
+        17: astore_2
+        18: aload_2
+        19: ifnonnull     25
+        22: goto          72
+        25: getstatic     #86                 // Field EMISSIONS:Ljava/util/Map;
+        28: aload_2
+        29: getfield      #72                 // Field io/github/litematicrender/world/BlockState.blockId:Ljava/lang/String;
+        32: iconst_0
+        33: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        36: invokeinterface #96,  3           // InterfaceMethod java/util/Map.getOrDefault:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+        41: checkcast     #91                 // class java/lang/Integer
+        44: invokevirtual #102                // Method java/lang/Integer.intValue:()I
+        47: istore_3
+        48: iload_3
+        49: ifle          72
+        52: aload_0
+        53: getfield      #31                 // Field block:[B
+        56: iload_1
+        57: iload_3
+        58: i2b
+        59: bastore
+        60: aload_0
+        61: aload_0
+        62: getfield      #106                // Field maxEmission:I
+        65: iload_3
+        66: invokestatic  #109                // Method java/lang/Math.max:(II)I
+        69: putfield      #106                // Field maxEmission:I
+        72: iinc          1, 1
+        75: goto          2
+        78: return
+
+  private void spreadBlock();
+    Code:
+         0: aload_0
+         1: getfield      #106                // Field maxEmission:I
+         4: ifne          8
+         7: return
+         8: aload_0
+         9: getfield      #31                 // Field block:[B
+        12: arraylength
+        13: newarray       int
+        15: astore_1
+        16: aload_0
+        17: getfield      #31                 // Field block:[B
+        20: arraylength
+        21: newarray       int
+        23: astore_2
+        24: aload_0
+        25: getfield      #31                 // Field block:[B
+        28: arraylength
+        29: newarray       int
+        31: astore_3
+        32: iconst_0
+        33: istore        4
+        35: iconst_0
+        36: istore        5
+        38: iconst_0
+        39: istore        6
+        41: iload         6
+        43: aload_0
+        44: getfield      #31                 // Field block:[B
+        47: arraylength
+        48: if_icmpge     114
+        51: aload_0
+        52: getfield      #31                 // Field block:[B
+        55: iload         6
+        57: baload
+        58: iconst_1
+        59: if_icmple     108
+        62: aload_1
+        63: iload         5
+        65: iload         6
+        67: aload_0
+        68: getfield      #7                  // Field sx:I
+        71: irem
+        72: iastore
+        73: aload_2
+        74: iload         5
+        76: iload         6
+        78: aload_0
+        79: getfield      #7                  // Field sx:I
+        82: idiv
+        83: aload_0
+        84: getfield      #16                 // Field sz:I
+        87: idiv
+        88: iastore
+        89: aload_3
+        90: iload         5
+        92: iload         6
+        94: aload_0
+        95: getfield      #7                  // Field sx:I
+        98: idiv
+        99: aload_0
+       100: getfield      #16                 // Field sz:I
+       103: irem
+       104: iastore
+       105: iinc          5, 1
+       108: iinc          6, 1
+       111: goto          41
+       114: bipush        6
+       116: anewarray     #67                 // class "[I"
+       119: dup
+       120: iconst_0
+       121: iconst_3
+       122: newarray       int
+       124: dup
+       125: iconst_0
+       126: iconst_1
+       127: iastore
+       128: dup
+       129: iconst_1
+       130: iconst_0
+       131: iastore
+       132: dup
+       133: iconst_2
+       134: iconst_0
+       135: iastore
+       136: aastore
+       137: dup
+       138: iconst_1
+       139: iconst_3
+       140: newarray       int
+       142: dup
+       143: iconst_0
+       144: iconst_m1
+       145: iastore
+       146: dup
+       147: iconst_1
+       148: iconst_0
+       149: iastore
+       150: dup
+       151: iconst_2
+       152: iconst_0
+       153: iastore
+       154: aastore
+       155: dup
+       156: iconst_2
+       157: iconst_3
+       158: newarray       int
+       160: dup
+       161: iconst_0
+       162: iconst_0
+       163: iastore
+       164: dup
+       165: iconst_1
+       166: iconst_1
+       167: iastore
+       168: dup
+       169: iconst_2
+       170: iconst_0
+       171: iastore
+       172: aastore
+       173: dup
+       174: iconst_3
+       175: iconst_3
+       176: newarray       int
+       178: dup
+       179: iconst_0
+       180: iconst_0
+       181: iastore
+       182: dup
+       183: iconst_1
+       184: iconst_m1
+       185: iastore
+       186: dup
+       187: iconst_2
+       188: iconst_0
+       189: iastore
+       190: aastore
+       191: dup
+       192: iconst_4
+       193: iconst_3
+       194: newarray       int
+       196: dup
+       197: iconst_0
+       198: iconst_0
+       199: iastore
+       200: dup
+       201: iconst_1
+       202: iconst_0
+       203: iastore
+       204: dup
+       205: iconst_2
+       206: iconst_1
+       207: iastore
+       208: aastore
+       209: dup
+       210: iconst_5
+       211: iconst_3
+       212: newarray       int
+       214: dup
+       215: iconst_0
+       216: iconst_0
+       217: iastore
+       218: dup
+       219: iconst_1
+       220: iconst_0
+       221: iastore
+       222: dup
+       223: iconst_2
+       224: iconst_m1
+       225: iastore
+       226: aastore
+       227: astore        6
+       229: iload         4
+       231: iload         5
+       233: if_icmpge     452
+       236: aload_1
+       237: iload         4
+       239: iaload
+       240: istore        7
+       242: aload_2
+       243: iload         4
+       245: iaload
+       246: istore        8
+       248: aload_3
+       249: iload         4
+       251: iaload
+       252: istore        9
+       254: iinc          4, 1
+       257: aload_0
+       258: getfield      #31                 // Field block:[B
+       261: aload_0
+       262: iload         7
+       264: iload         8
+       266: iload         9
+       268: invokevirtual #34                 // Method idx:(III)I
+       271: baload
+       272: istore        10
+       274: iload         10
+       276: iconst_1
+       277: if_icmpgt     283
+       280: goto          229
+       283: aload         6
+       285: astore        11
+       287: aload         11
+       289: arraylength
+       290: istore        12
+       292: iconst_0
+       293: istore        13
+       295: iload         13
+       297: iload         12
+       299: if_icmpge     449
+       302: aload         11
+       304: iload         13
+       306: aaload
+       307: astore        14
+       309: iload         7
+       311: aload         14
+       313: iconst_0
+       314: iaload
+       315: iadd
+       316: istore        15
+       318: iload         8
+       320: aload         14
+       322: iconst_1
+       323: iaload
+       324: iadd
+       325: istore        16
+       327: iload         9
+       329: aload         14
+       331: iconst_2
+       332: iaload
+       333: iadd
+       334: istore        17
+       336: aload_0
+       337: iload         15
+       339: iload         16
+       341: iload         17
+       343: invokevirtual #69                 // Method inside:(III)Z
+       346: ifeq          443
+       349: aload_0
+       350: iload         15
+       352: iload         16
+       354: iload         17
+       356: invokevirtual #63                 // Method permeable:(III)Z
+       359: ifne          365
+       362: goto          443
+       365: iload         10
+       367: iconst_1
+       368: isub
+       369: istore        18
+       371: iload         18
+       373: aload_0
+       374: getfield      #31                 // Field block:[B
+       377: aload_0
+       378: iload         15
+       380: iload         16
+       382: iload         17
+       384: invokevirtual #34                 // Method idx:(III)I
+       387: baload
+       388: if_icmple     443
+       391: aload_0
+       392: getfield      #31                 // Field block:[B
+       395: aload_0
+       396: iload         15
+       398: iload         16
+       400: iload         17
+       402: invokevirtual #34                 // Method idx:(III)I
+       405: iload         18
+       407: i2b
+       408: bastore
+       409: iload         18
+       411: iconst_1
+       412: if_icmple     443
+       415: iload         5
+       417: aload_1
+       418: arraylength
+       419: if_icmpge     443
+       422: aload_1
+       423: iload         5
+       425: iload         15
+       427: iastore
+       428: aload_2
+       429: iload         5
+       431: iload         16
+       433: iastore
+       434: aload_3
+       435: iload         5
+       437: iload         17
+       439: iastore
+       440: iinc          5, 1
+       443: iinc          13, 1
+       446: goto          295
+       449: goto          229
+       452: return
+
+  public int faceLight(int, int, int, int, int, int);
+    Code:
+         0: iload_1
+         1: iload         4
+         3: iadd
+         4: istore        7
+         6: iload_2
+         7: iload         5
+         9: iadd
+        10: istore        8
+        12: iload_3
+        13: iload         6
+        15: iadd
+        16: istore        9
+        18: aload_0
+        19: iload         7
+        21: iload         8
+        23: iload         9
+        25: invokevirtual #69                 // Method inside:(III)Z
+        28: ifne          38
+        31: bipush        15
+        33: iconst_0
+        34: invokestatic  #115                // Method pack:(II)I
+        37: ireturn
+        38: aload_0
+        39: iload         7
+        41: iload         8
+        43: iload         9
+        45: invokevirtual #34                 // Method idx:(III)I
+        48: istore        10
+        50: aload_0
+        51: getfield      #27                 // Field sky:[B
+        54: iload         10
+        56: baload
+        57: sipush        255
+        60: iand
+        61: aload_0
+        62: getfield      #31                 // Field block:[B
+        65: iload         10
+        67: baload
+        68: sipush        255
+        71: iand
+        72: invokestatic  #115                // Method pack:(II)I
+        75: ireturn
+
+  public int cellLight(int, int, int);
+    Code:
+         0: aload_0
+         1: iload_1
+         2: iload_2
+         3: iload_3
+         4: invokevirtual #69                 // Method inside:(III)Z
+         7: ifne          17
+        10: bipush        15
+        12: iconst_0
+        13: invokestatic  #115                // Method pack:(II)I
+        16: ireturn
+        17: aload_0
+        18: iload_1
+        19: iload_2
+        20: iload_3
+        21: invokevirtual #34                 // Method idx:(III)I
+        24: istore        4
+        26: aload_0
+        27: getfield      #27                 // Field sky:[B
+        30: iload         4
+        32: baload
+        33: sipush        255
+        36: iand
+        37: aload_0
+        38: getfield      #31                 // Field block:[B
+        41: iload         4
+        43: baload
+        44: sipush        255
+        47: iand
+        48: invokestatic  #115                // Method pack:(II)I
+        51: ireturn
+
+  private static int pack(int, int);
+    Code:
+         0: iload_0
+         1: sipush        255
+         4: iand
+         5: bipush        8
+         7: ishl
+         8: iload_1
+         9: sipush        255
+        12: iand
+        13: ior
+        14: ireturn
+
+  public static int max(int, int);
+    Code:
+         0: iload_0
+         1: invokestatic  #118                // Method skyOf:(I)I
+         4: iload_1
+         5: invokestatic  #118                // Method skyOf:(I)I
+         8: invokestatic  #109                // Method java/lang/Math.max:(II)I
+        11: iload_0
+        12: invokestatic  #122                // Method blockOf:(I)I
+        15: iload_1
+        16: invokestatic  #122                // Method blockOf:(I)I
+        19: invokestatic  #109                // Method java/lang/Math.max:(II)I
+        22: invokestatic  #115                // Method pack:(II)I
+        25: ireturn
+
+  public static int skyOf(int);
+    Code:
+         0: iload_0
+         1: bipush        8
+         3: ishr
+         4: sipush        255
+         7: iand
+         8: ireturn
+
+  public static int blockOf(int);
+    Code:
+         0: iload_0
+         1: sipush        255
+         4: iand
+         5: ireturn
+
+  public static float curve(int);
+    Code:
+         0: iconst_0
+         1: bipush        15
+         3: iload_0
+         4: invokestatic  #125                // Method java/lang/Math.min:(II)I
+         7: invokestatic  #109                // Method java/lang/Math.max:(II)I
+        10: i2f
+        11: ldc           #128                // float 15.0f
+        13: fdiv
+        14: fstore_1
+        15: fload_1
+        16: ldc           #129                // float 4.0f
+        18: ldc           #130                // float 3.0f
+        20: fload_1
+        21: fmul
+        22: fsub
+        23: fdiv
+        24: freturn
+
+  public static void brightness(int, float[]);
+    Code:
+         0: iload_0
+         1: invokestatic  #122                // Method blockOf:(I)I
+         4: i2f
+         5: ldc           #128                // float 15.0f
+         7: fdiv
+         8: fstore_2
+         9: iload_0
+        10: invokestatic  #118                // Method skyOf:(I)I
+        13: i2f
+        14: ldc           #128                // float 15.0f
+        16: fdiv
+        17: fstore_3
+        18: iload_0
+        19: invokestatic  #122                // Method blockOf:(I)I
+        22: invokestatic  #131                // Method curve:(I)F
+        25: fstore        4
+        27: iload_0
+        28: invokestatic  #118                // Method skyOf:(I)I
+        31: invokestatic  #131                // Method curve:(I)F
+        34: fstore        5
+        36: getstatic     #135                // Field AMBIENT:F
+        39: fload         5
+        41: fadd
+        42: fstore        6
+        44: getstatic     #135                // Field AMBIENT:F
+        47: fload         5
+        49: fadd
+        50: fstore        7
+        52: getstatic     #135                // Field AMBIENT:F
+        55: fload         5
+        57: fadd
+        58: fstore        8
+        60: ldc           #139                // float 0.9f
+        62: fconst_2
+        63: fload_2
+        64: fmul
+        65: fconst_1
+        66: fsub
+        67: fmul
+        68: fconst_2
+        69: fload_2
+        70: fmul
+        71: fconst_1
+        72: fsub
+        73: fmul
+        74: fstore        9
+        76: fconst_1
+        77: fconst_0
+        78: fload         9
+        80: fmul
+        81: fadd
+        82: fstore        10
+        84: ldc           #140                // float 0.84705883f
+        86: ldc           #141                // float 0.15294117f
+        88: fload         9
+        90: fmul
+        91: fadd
+        92: fstore        11
+        94: ldc           #142                // float 0.54901963f
+        96: ldc           #143                // float 0.45098037f
+        98: fload         9
+       100: fmul
+       101: fadd
+       102: fstore        12
+       104: fload         6
+       106: fload         10
+       108: fload         4
+       110: fmul
+       111: fadd
+       112: fstore        6
+       114: fload         7
+       116: fload         11
+       118: fload         4
+       120: fmul
+       121: fadd
+       122: fstore        7
+       124: fload         8
+       126: fload         12
+       128: fload         4
+       130: fmul
+       131: fadd
+       132: fstore        8
+       134: aload_1
+       135: iconst_0
+       136: fconst_1
+       137: fload         6
+       139: invokestatic  #144                // Method java/lang/Math.min:(FF)F
+       142: fastore
+       143: aload_1
+       144: iconst_1
+       145: fconst_1
+       146: fload         7
+       148: invokestatic  #144                // Method java/lang/Math.min:(FF)F
+       151: fastore
+       152: aload_1
+       153: iconst_2
+       154: fconst_1
+       155: fload         8
+       157: invokestatic  #144                // Method java/lang/Math.min:(FF)F
+       160: fastore
+       161: return
+
+  static {};
+    Code:
+         0: ldc           #147                // float 0.003921569f
+         2: ldc           #148                // float 0.039215688f
+         4: invokestatic  #149                // Method java/lang/Math.max:(FF)F
+         7: putstatic     #135                // Field AMBIENT:F
+        10: bipush        25
+        12: anewarray     #151                // class java/util/Map$Entry
+        15: dup
+        16: iconst_0
+        17: ldc           #153                // String minecraft:torch
+        19: bipush        14
+        21: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        24: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+        27: aastore
+        28: dup
+        29: iconst_1
+        30: ldc           #159                // String minecraft:soul_torch
+        32: bipush        10
+        34: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        37: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+        40: aastore
+        41: dup
+        42: iconst_2
+        43: ldc           #161                // String minecraft:redstone_torch
+        45: bipush        7
+        47: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        50: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+        53: aastore
+        54: dup
+        55: iconst_3
+        56: ldc           #163                // String minecraft:wall_torch
+        58: bipush        14
+        60: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        63: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+        66: aastore
+        67: dup
+        68: iconst_4
+        69: ldc           #165                // String minecraft:soul_wall_torch
+        71: bipush        10
+        73: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        76: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+        79: aastore
+        80: dup
+        81: iconst_5
+        82: ldc           #167                // String minecraft:lantern
+        84: bipush        15
+        86: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+        89: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+        92: aastore
+        93: dup
+        94: bipush        6
+        96: ldc           #169                // String minecraft:soul_lantern
+        98: bipush        10
+       100: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       103: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       106: aastore
+       107: dup
+       108: bipush        7
+       110: ldc           #171                // String minecraft:glowstone
+       112: bipush        15
+       114: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       117: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       120: aastore
+       121: dup
+       122: bipush        8
+       124: ldc           #173                // String minecraft:sea_lantern
+       126: bipush        15
+       128: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       131: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       134: aastore
+       135: dup
+       136: bipush        9
+       138: ldc           #175                // String minecraft:shroomlight
+       140: bipush        15
+       142: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       145: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       148: aastore
+       149: dup
+       150: bipush        10
+       152: ldc           #177                // String minecraft:ochre_froglight
+       154: bipush        15
+       156: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       159: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       162: aastore
+       163: dup
+       164: bipush        11
+       166: ldc           #179                // String minecraft:verdant_froglight
+       168: bipush        15
+       170: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       173: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       176: aastore
+       177: dup
+       178: bipush        12
+       180: ldc           #181                // String minecraft:pearlescent_froglight
+       182: bipush        15
+       184: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       187: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       190: aastore
+       191: dup
+       192: bipush        13
+       194: ldc           #183                // String minecraft:beacon
+       196: bipush        15
+       198: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       201: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       204: aastore
+       205: dup
+       206: bipush        14
+       208: ldc           #185                // String minecraft:end_rod
+       210: bipush        14
+       212: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       215: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       218: aastore
+       219: dup
+       220: bipush        15
+       222: ldc           #187                // String minecraft:campfire
+       224: bipush        15
+       226: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       229: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       232: aastore
+       233: dup
+       234: bipush        16
+       236: ldc           #189                // String minecraft:soul_campfire
+       238: bipush        10
+       240: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       243: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       246: aastore
+       247: dup
+       248: bipush        17
+       250: ldc           #191                // String minecraft:jack_o_lantern
+       252: bipush        15
+       254: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       257: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       260: aastore
+       261: dup
+       262: bipush        18
+       264: ldc           #193                // String minecraft:lava
+       266: bipush        15
+       268: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       271: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       274: aastore
+       275: dup
+       276: bipush        19
+       278: ldc           #195                // String minecraft:magma_block
+       280: iconst_3
+       281: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       284: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       287: aastore
+       288: dup
+       289: bipush        20
+       291: ldc           #197                // String minecraft:glow_lichen
+       293: bipush        7
+       295: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       298: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       301: aastore
+       302: dup
+       303: bipush        21
+       305: ldc           #199                // String minecraft:amethyst_cluster
+       307: iconst_5
+       308: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       311: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       314: aastore
+       315: dup
+       316: bipush        22
+       318: ldc           #201                // String minecraft:crying_obsidian
+       320: bipush        10
+       322: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       325: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       328: aastore
+       329: dup
+       330: bipush        23
+       332: ldc           #203                // String minecraft:light
+       334: bipush        15
+       336: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       339: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       342: aastore
+       343: dup
+       344: bipush        24
+       346: ldc           #205                // String minecraft:ochre_candle
+       348: iconst_3
+       349: invokestatic  #90                 // Method java/lang/Integer.valueOf:(I)Ljava/lang/Integer;
+       352: invokestatic  #155                // InterfaceMethod java/util/Map.entry:(Ljava/lang/Object;Ljava/lang/Object;)Ljava/util/Map$Entry;
+       355: aastore
+       356: invokestatic  #207                // InterfaceMethod java/util/Map.ofEntries:([Ljava/util/Map$Entry;)Ljava/util/Map;
+       359: putstatic     #86                 // Field EMISSIONS:Ljava/util/Map;
+       362: return
+}

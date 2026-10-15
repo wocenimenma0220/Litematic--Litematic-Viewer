@@ -1,0 +1,3 @@
+# Enhanced Block Entities model adaptations
+These static JSON models are derived from the local EnhancedBlockEntities-1.21.4 sources by FoundationGames and contributors. Source: https://github.com/FoundationGames/EnhancedBlockEntities
+License: LGPL-3.0 (see EBE-LICENSE.txt). Adaptations rename template paths and supply Minecraft entity textures, closed chest/shulker states, and decorated-pot patterns for this standalone renderer.

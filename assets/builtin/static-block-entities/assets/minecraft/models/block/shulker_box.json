@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:block/litematicrender_ebe_template_shulker_box",
+  "textures": {
+    "shulker": "minecraft:entity/shulker/shulker"
+  }
+}

@@ -12,7 +12,6 @@ import java.nio.file.Path;
  * Pixels are stored as ARGB ints (alpha in bits 24-31), row-major, top-to-bottom.
  */
 public final class Image {
-    public static boolean DEBUG_BLIT = false;
     public final int width;
     public final int height;
     private final int[] pixels;
@@ -79,11 +78,6 @@ public final class Image {
         dst.blitFrom(this, srcX, srcY, dstX, dstY, w, h);
     }
 
-    /** Deprecated alias kept during migration (this = destination). */
-    public void blitInto(Image src, int srcX, int srcY, int dstX, int dstY, int w, int h) {
-        this.blitFrom(src, srcX, srcY, dstX, dstY, w, h);
-    }
-
     public static Image read(byte[] data) throws IOException {
         BufferedImage img = ImageIO.read(new ByteArrayInputStream(data));
         if (img == null) throw new IOException("Unsupported image format");
@@ -116,7 +110,11 @@ public final class Image {
     }
 
     public void writePng(Path file) throws IOException {
-        ImageIO.write(this.toBuffered(), "png", file.toFile());
+        Path target = file.toAbsolutePath();
+        java.nio.file.Files.createDirectories(target.getParent());
+        if (!ImageIO.write(this.toBuffered(), "png", target.toFile())) {
+            throw new IOException("PNG writer unavailable: " + target);
+        }
     }
 
     /** The missing texture: pink/black checkerboard (vanilla missingno). */
