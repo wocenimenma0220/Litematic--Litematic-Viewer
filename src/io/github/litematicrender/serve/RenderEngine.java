@@ -604,7 +604,8 @@ public final class RenderEngine implements AutoCloseable {
         long t0 = System.currentTimeMillis();
         SceneMesh mesh=sceneMesh(settings.realLighting);
         long buildMillis=System.currentTimeMillis()-t0;
-        int frameCount=Math.max(2,Math.min(360,ticks));
+        int frameCount=Math.max(2,Math.min(RenderSettings.MAX_ANIMATION_FRAMES,ticks));
+        var camera=SchematicRenderer.fitRotationCamera(mesh,settings);
         var cycle=this.atlas.animationCycle(mesh,frameCount);
         long[] renderingNanos={0};
         GifWriter.writeFrames(outGif,frameCount,delayCs,i -> {
@@ -617,8 +618,10 @@ public final class RenderEngine implements AutoCloseable {
             s.backgroundImage = settings.backgroundImage;
             s.checkerSize = settings.checkerSize;
             s.ambientShadeScale = settings.ambientShadeScale;
-            s.animationTick = i;
-            Image frame=SchematicRenderer.render(this.schematic,mesh,this.colormaps,this.atlas,s);
+            s.animationTick = settings.animationTick + (int)(i * (long)delayCs / 5);
+            camera.rotationDeg=s.rotationDeg;
+            camera.update();
+            Image frame=SchematicRenderer.renderWithCamera(mesh,this.atlas,s,camera);
             renderingNanos[0]+=System.nanoTime()-renderStart;
             return frame;
         });

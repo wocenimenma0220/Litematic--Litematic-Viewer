@@ -156,8 +156,8 @@ public final class JsonRpcServer {
             case "renderAnimation": {
                 RenderSettings s = settingsFrom(p);
                 Path out = Path.of(require(p, "out"));
-                int ticks = MiniJson.asInt(p.get("frames"), 24);
-                int delayCs = MiniJson.asInt(p.get("delay"), 5);
+                int ticks = MiniJson.asInt(p.get("frames"), RenderSettings.DEFAULT_ANIMATION_FRAMES);
+                int delayCs = MiniJson.asInt(p.get("delay"), RenderSettings.DEFAULT_ANIMATION_DELAY_CS);
                 return this.engine.renderAnimation(out, s, ticks, delayCs);
             }
 

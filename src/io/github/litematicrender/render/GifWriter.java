@@ -222,11 +222,12 @@ public final class GifWriter {
     }
 
     private void writeFrame(Image img, int delayCs) {
-        // Graphic control extension: transparent index 0, delay, no disposal.
+        // Each full frame replaces the preceding one. Clear it back to transparent before
+        // drawing the next frame, including the last-to-first loop transition.
         this.out.write(0x21);
         this.out.write(0xF9);
         this.out.write(4);
-        this.out.write(0x01);              // transparent colour flag
+        this.out.write(0x09);              // disposal 2 (restore background) + transparent flag
         writeShort(Math.max(1, delayCs));
         this.out.write(0);                 // transparent colour index
         this.out.write(0);

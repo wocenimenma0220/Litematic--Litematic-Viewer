@@ -4,6 +4,9 @@ package io.github.litematicrender.render;
  * Render parameters (WikiRenderer-PropertyBundle-style bundle, simplified).
  */
 public final class RenderSettings {
+    public static final int DEFAULT_ANIMATION_FRAMES = 480;
+    public static final int DEFAULT_ANIMATION_DELAY_CS = 2;
+    public static final int MAX_ANIMATION_FRAMES = 3600;
     public float rotationDeg = 45f;      // yaw
     public float slantDeg = 30f;         // pitch (30 dimetric / 35.264 isometric)
     public int width = 1024;

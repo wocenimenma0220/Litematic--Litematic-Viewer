@@ -16,7 +16,7 @@ shell.showItemInFolder=()=>{};
 const bg=path.join(out,'background.png');fs.writeFileSync(bg,nativeImage.createFromBitmap(Buffer.from([0,0,255,255,255,255,0,255]),{width:2,height:1}).toPNG());
 dialog.showOpenDialog=async()=>({canceled:false,filePaths:[bg]});
 const {EngineClient}=require(path.join(root,'webapp/engine-client')),original=EngineClient.prototype.call;
-let engine;EngineClient.prototype.call=function(method,params){engine=this;return original.call(this,method,params);};
+let engine;const animations=[];EngineClient.prototype.call=function(method,params){engine=this;return original.call(this,method,params).then(result=>{if(method==='renderAnimation')animations.push({params,result});return result;});};
 app.once('browser-window-created',(_event,win)=>win.webContents.once('did-finish-load',async()=>{
  const run=code=>win.webContents.executeJavaScript('(async()=>{'+code+'})()');
  try{
@@ -28,6 +28,8 @@ app.once('browser-window-created',(_event,win)=>win.webContents.once('did-finish
    return renderParams(192,192);`);
   saves.push(path.join(out,'grid-export.png'));await run('await exportPng();');
   saves.push(path.join(out,'grid-export.gif'));await run('await exportGif();');
+  if(animations.length!==1||animations[0].params.delay!==2||animations[0].result.delayCentiseconds!==2||animations[0].result.frames!==480)throw Error('UI GIF must rotate once at 50 FPS with 480 frames over 9.6 seconds');
+  if(!(await run("return document.querySelector('#btnExportGif').disabled===false&&document.body.textContent.includes('缩放固定')&&document.body.textContent.includes('9.6 秒');")))throw Error('fixed-scale GIF controls or duration hint missing');
   await run(`els.bgMode.value='white';els.bgMode.dispatchEvent(new Event('change'));
    if(els.transparent.checked||els.transparent.disabled)throw Error('Selecting white did not enable opaque export');`);
   saves.push(path.join(out,'white.png'));await run('await exportPng();');
@@ -36,17 +38,18 @@ app.once('browser-window-created',(_event,win)=>win.webContents.once('did-finish
   await run(`const background=await window.appUi.importBackground();useBackground(background);
    if(els.transparent.checked)throw Error('Imported image stayed transparent');
    await window.engine.render({...renderParams(192,128),out:${JSON.stringify(path.join(out,'image-export.png'))}});
-   await window.engine.renderAnimation({...renderParams(96,64),out:${JSON.stringify(path.join(out,'image-export.gif'))},frames:2,delay:5});
+   await window.engine.renderAnimation({...renderParams(96,64),out:${JSON.stringify(path.join(out,'image-export.gif'))},frames:2});
    els.bgMode.value='checker';els.bgMode.dispatchEvent(new Event('change'));
    els.previewBackend.value='cpu';els.previewBackend.dispatchEvent(new Event('change'));
    const end=Date.now()+30000;while(state.rendering||cpuPreviewRunning||cpuPreviewPending){if(Date.now()>end)throw Error('CPU preview timeout');await new Promise(r=>setTimeout(r,20));}
    if(!state.cpuPreviewReady||!els.viewport.classList.contains('checker'))throw Error('CPU checker preview failed');`);
   saves.push(path.join(out,'cpu-grid.png'));await run('await exportPng();');
+  if(animations[1].result.delayCentiseconds!==2)throw Error('RPC animation default delay differs from the UI');
   // Bypass Electron's parameter normalization to exercise the Java RPC precedence too.
   await original.call(engine,'render',{width:192,height:192,transparent:true,background:0xFFFFFF,out:path.join(out,'rpc-override.png')});
   await original.call(engine,'render',{width:192,height:192,transparent:false,backgroundMode:'checker',background:0xFFFFFF,out:path.join(out,'rpc-checker.png')});
   for(const name of ['grid-export.png','grid-export.gif','white.png','override.png','image-export.png','image-export.gif','cpu-grid.png','rpc-override.png','rpc-checker.png'])if(!fs.existsSync(path.join(out,name)))throw Error('Missing export: '+name);
-  const result={pass:true,version:require(path.join(root,'webapp/package.json')).version,defaultParams:first,actualSaveDialogs:true,gpuAndCpu:true,gridPngGif:true,opaqueBackgrounds:true,explicitTransparent:true,rawRpc:true};
+  const result={pass:true,version:require(path.join(root,'webapp/package.json')).version,defaultParams:first,actualSaveDialogs:true,gpuAndCpu:true,gridPngGif:true,opaqueBackgrounds:true,explicitTransparent:true,rawRpc:true,rotationDurationMillis:animations[0].result.frames*animations[0].result.delayCentiseconds*10,fixedScaleHint:true};
   fs.writeFileSync(path.join(out,'result.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));app.quit();
  }catch(error){restore();fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({pass:false,error:error.stack}));console.error(error);app.exit(1);}
 }));

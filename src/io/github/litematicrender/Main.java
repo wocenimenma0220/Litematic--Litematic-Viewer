@@ -38,9 +38,9 @@ public final class Main {
             Path schem = Path.of(args[1]);
             Path out = Path.of(args.length > 2 ? args[2] : "animation.gif");
             int size = args.length > 3 ? Integer.parseInt(args[3]) : 512;
-            int frames = args.length > 4 ? Integer.parseInt(args[4]) : 64;
+            int frames = args.length > 4 ? Integer.parseInt(args[4]) : RenderSettings.DEFAULT_ANIMATION_FRAMES;
             RenderSettings settings = new RenderSettings(45f, 30f, size, size);
-            CliRenderer.renderAnimation(schem, vanilla, out, settings, frames, 5, true);
+            CliRenderer.renderAnimation(schem, vanilla, out, settings, frames, RenderSettings.DEFAULT_ANIMATION_DELAY_CS, true);
             return;
         }
 

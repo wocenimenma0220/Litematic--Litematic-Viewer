@@ -1392,8 +1392,8 @@ async function exportGif() {
     const res = await window.engine.renderAnimation({
       ...renderParams(size, size),
       out,
-      frames: 64,
-      delay: 5,
+      frames: 480,
+      delay: 2,
     });
     log(`已导出动画：${res.path}（${res.frames} 帧）`, 'ok');
     window.shellApi.reveal(res.path);

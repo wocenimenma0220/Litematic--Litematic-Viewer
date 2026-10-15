@@ -31,7 +31,8 @@ public class SceneExportRegression {
             var result=engine.renderAnimation(output.resolve("reference.gif"),settings,3,5);
             check(field(engine,"scene")==before,"GIF rebuilt the cached desktop scene");
             int count=((Number)result.get("frames")).intValue();var frames=new ArrayList<Image>();
-            for(int i=0;i<count;i++){settings.animationTick=i;frames.add(SchematicRenderer.render(null,before,colors,atlas,settings));}
+            var camera=SchematicRenderer.fitRotationCamera(before,settings);float startRotation=settings.rotationDeg;
+            for(int i=0;i<count;i++){settings.animationTick=i;camera.rotationDeg=startRotation+i*360f/count;camera.update();frames.add(SchematicRenderer.renderWithCamera(before,atlas,settings,camera));}
             GifWriter.write(output.resolve("reference-expected.gif"),frames,5);
             GifWriter.writeFrames(output.resolve("reference-replay.gif"),frames.size(),5,tick->frames.get(tick));
             check(Files.mismatch(output.resolve("reference-replay.gif"),output.resolve("reference-expected.gif"))==-1,"spooling changed complex image encoding");

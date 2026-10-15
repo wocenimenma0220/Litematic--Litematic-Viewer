@@ -35,7 +35,7 @@ public final class SchematicRenderer {
         cam.offsetX *= settings.previewZoom;
         cam.offsetY *= settings.previewZoom;
         cam.update();
-        return rasterizeWithCamera(mesh, atlas, settings, cam);
+        return renderWithCamera(mesh, atlas, settings, cam);
     }
 
     public static Image render(LitematicaSchematic schematic,
@@ -97,8 +97,9 @@ public final class SchematicRenderer {
         return s;
     }
 
-    private static Image rasterizeWithCamera(SceneMesh mesh, SpriteAtlas atlas,
-                                             RenderSettings settings, Camera cam) {
+    /** Renders with an already fitted camera, without changing its center, scale or offsets. */
+    public static Image renderWithCamera(SceneMesh mesh, SpriteAtlas atlas,
+                                         RenderSettings settings, Camera cam) {
         // Animated textures (water, lava, fire, portal, …) live in the atlas, so pick the frame for
         // the requested tick before rasterizing. Geometry and UVs are unaffected — only pixels move.
         atlas.rebakeAtTick(settings.animationTick);
@@ -152,29 +153,64 @@ public final class SchematicRenderer {
             q.shade * s.ambientShadeScale, q.ao, translucent, q.doubleSided, colors);
     }
 
-    /** Positions the camera so the mesh bounding box fits the viewport. */
-    public static void fitCameraToMesh(Camera cam, SceneMesh mesh, int width, int height) {
+    /** Fits every yaw at once, so a full orbit has one fixed center and orthographic scale. */
+    public static Camera fitRotationCamera(SceneMesh mesh, RenderSettings settings) {
+        Camera cam = new Camera();
+        cam.rotationDeg = settings.rotationDeg;
+        cam.slantDeg = settings.slantDeg;
+        double[] bounds = meshBounds(mesh);
+        if (bounds != null) {
+            cam.centerX = (bounds[0] + bounds[3]) / 2;
+            cam.centerY = (bounds[1] + bounds[4]) / 2;
+            cam.centerZ = (bounds[2] + bounds[5]) / 2;
+            double radius = 0;
+            for (var layer : List.of(mesh.solid, mesh.cutout, mesh.translucent, mesh.portal, mesh.fluid)) {
+                for (var q : layer) {
+                    if (q.decorativeEffect()) continue;
+                    radius = Math.max(radius, Math.hypot(q.x0 - cam.centerX, q.z0 - cam.centerZ));
+                    radius = Math.max(radius, Math.hypot(q.x1 - cam.centerX, q.z1 - cam.centerZ));
+                    radius = Math.max(radius, Math.hypot(q.x2 - cam.centerX, q.z2 - cam.centerZ));
+                    radius = Math.max(radius, Math.hypot(q.x3 - cam.centerX, q.z3 - cam.centerZ));
+                }
+            }
+            double pitch = Math.toRadians(cam.slantDeg);
+            double halfHeight = (bounds[4] - bounds[1]) / 2;
+            double spanX = Math.max(1e-3, 2 * radius);
+            double spanY = Math.max(1e-3, 2 * (Math.abs(Math.cos(pitch)) * halfHeight + Math.abs(Math.sin(pitch)) * radius));
+            cam.zoom = (float)(Math.min(settings.width / spanX, settings.height / spanY) * 0.92 * settings.previewZoom);
+        }
+        cam.update();
+        return cam;
+    }
+
+    private static double[] meshBounds(SceneMesh mesh) {
         double minXw = Double.MAX_VALUE, maxXw = -Double.MAX_VALUE;
         double minYw = Double.MAX_VALUE, maxYw = -Double.MAX_VALUE;
         double minZw = Double.MAX_VALUE, maxZw = -Double.MAX_VALUE;
-        List<SceneMesh.MeshQuad> all = new java.util.ArrayList<>();
-        all.addAll(mesh.solid); all.addAll(mesh.cutout); all.addAll(mesh.translucent);
-        all.addAll(mesh.portal); all.addAll(mesh.fluid);
-        if (all.isEmpty()) {
+        for (var layer : List.of(mesh.solid, mesh.cutout, mesh.translucent, mesh.portal, mesh.fluid)) {
+            for (SceneMesh.MeshQuad q : layer) {
+                if(q.decorativeEffect())continue;
+                minXw = Math.min(minXw, Math.min(Math.min(q.x0, q.x1), Math.min(q.x2, q.x3)));
+                maxXw = Math.max(maxXw, Math.max(Math.max(q.x0, q.x1), Math.max(q.x2, q.x3)));
+                minYw = Math.min(minYw, Math.min(Math.min(q.y0, q.y1), Math.min(q.y2, q.y3)));
+                maxYw = Math.max(maxYw, Math.max(Math.max(q.y0, q.y1), Math.max(q.y2, q.y3)));
+                minZw = Math.min(minZw, Math.min(Math.min(q.z0, q.z1), Math.min(q.z2, q.z3)));
+                maxZw = Math.max(maxZw, Math.max(Math.max(q.z0, q.z1), Math.max(q.z2, q.z3)));
+            }
+        }
+        return minXw == Double.MAX_VALUE ? null : new double[]{minXw, minYw, minZw, maxXw, maxYw, maxZw};
+    }
+
+    /** Positions the camera so the mesh bounding box fits the viewport. */
+    public static void fitCameraToMesh(Camera cam, SceneMesh mesh, int width, int height) {
+        double[] bounds = meshBounds(mesh);
+        if (bounds == null) {
             cam.centerX = cam.centerY = cam.centerZ = 0;
             cam.zoom = 1;
             cam.offsetX = cam.offsetY = 0;
             return;
         }
-        for (SceneMesh.MeshQuad q : all) {
-            if(q.decorativeEffect())continue;
-            minXw = Math.min(minXw, Math.min(Math.min(q.x0, q.x1), Math.min(q.x2, q.x3)));
-            maxXw = Math.max(maxXw, Math.max(Math.max(q.x0, q.x1), Math.max(q.x2, q.x3)));
-            minYw = Math.min(minYw, Math.min(Math.min(q.y0, q.y1), Math.min(q.y2, q.y3)));
-            maxYw = Math.max(maxYw, Math.max(Math.max(q.y0, q.y1), Math.max(q.y2, q.y3)));
-            minZw = Math.min(minZw, Math.min(Math.min(q.z0, q.z1), Math.min(q.z2, q.z3)));
-            maxZw = Math.max(maxZw, Math.max(Math.max(q.z0, q.z1), Math.max(q.z2, q.z3)));
-        }
+        double minXw=bounds[0], minYw=bounds[1], minZw=bounds[2], maxXw=bounds[3], maxYw=bounds[4], maxZw=bounds[5];
         cam.centerX = (minXw + maxXw) / 2.0;
         cam.centerY = (minYw + maxYw) / 2.0;
         cam.centerZ = (minZw + maxZw) / 2.0;

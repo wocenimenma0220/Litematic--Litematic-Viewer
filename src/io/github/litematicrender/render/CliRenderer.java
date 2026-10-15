@@ -122,7 +122,8 @@ public final class CliRenderer {
             ModelBaker baker = new ModelBaker(resources, registry);
 
             var mesh=SchematicRenderer.buildScene(schem,baker,registry,colormaps,atlas,settings.realLighting,settings.lightingEnabled);
-            int frameCount=Math.max(2,Math.min(360,ticks));
+            int frameCount=Math.max(2,Math.min(RenderSettings.MAX_ANIMATION_FRAMES,ticks));
+            var camera=SchematicRenderer.fitRotationCamera(mesh,settings);
             if (verbose) {
                 System.out.println("rotating animation: " + frameCount + " frames");
             }
@@ -137,8 +138,10 @@ public final class CliRenderer {
                 s.backgroundImage = settings.backgroundImage;
                 s.checkerSize = settings.checkerSize;
                 s.ambientShadeScale = settings.ambientShadeScale;
-                s.animationTick = i;
-                return SchematicRenderer.render(schem,mesh,colormaps,atlas,s);
+                s.animationTick = settings.animationTick + (int)(i * (long)delayCs / 5);
+                camera.rotationDeg=s.rotationDeg;
+                camera.update();
+                return SchematicRenderer.renderWithCamera(mesh,atlas,s,camera);
             });
             long t2 = System.currentTimeMillis();
 
