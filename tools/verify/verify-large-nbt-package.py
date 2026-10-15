@@ -12,7 +12,7 @@ with zipfile.ZipFile(archive) as package:
     names = package.namelist()
     assert len(names) == len(set(names)), 'duplicate ZIP entries'
     assert not any(n.startswith(('cache/', 'tools/', 'settings/')) for n in names), 'test or personal data shipped'
-    selected = ['README.md', 'CHANGELOG.md', '投影渲染与区块缓存综合评估.md',
+    selected = ['README.md', '评估与测评/CHANGELOG.md', '评估与测评/投影渲染与区块缓存综合评估.md',
                 'webapp/main.js', 'webapp/cache-cleanup.js', 'webapp/engine-client.js',
                 'webapp/preload.js', 'webapp/ui-settings.js', 'webapp/package.json',
                 'webapp/scene-transfer.js', 'webapp/renderer/index.html', 'webapp/renderer/renderer.js',

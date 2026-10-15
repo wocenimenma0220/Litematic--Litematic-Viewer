@@ -142,16 +142,9 @@ New-Item -ItemType Directory -Path (Join-Path $stageDir 'logs') -Force | Out-Nul
 # The launcher sits at the root, which is the whole point of the package layout.
 Copy-Item $launcherExe -Destination $stageDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'README.md') -Destination $stageDir
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'CHANGELOG.md')) {
-    Copy-Item -LiteralPath (Join-Path $ProjectRoot 'CHANGELOG.md') -Destination $stageDir
-}
-if (Test-Path -LiteralPath (Join-Path $ProjectRoot 'LOD_STREAMING.md')) {
-    Copy-Item -LiteralPath (Join-Path $ProjectRoot 'LOD_STREAMING.md') -Destination $stageDir
-}
-foreach ($document in @('TODO.md', 'ScalableLux光照评估.md', 'LiteTool渲染与大投影加载评估.md', '投影渲染与区块缓存综合评估.md')) {
-    if (Test-Path -LiteralPath (Join-Path $ProjectRoot $document)) {
-        Copy-Item -LiteralPath (Join-Path $ProjectRoot $document) -Destination $stageDir
-    }
+$evaluationDocs = Join-Path $ProjectRoot '评估与测评'
+if (Test-Path -LiteralPath $evaluationDocs) {
+    Copy-Item -LiteralPath $evaluationDocs -Destination $stageDir -Recurse
 }
 # Public texture/profile caches allow previously viewed heads to render offline.
 # Local PNG overrides and the user's networking preference remain personal to their install.
