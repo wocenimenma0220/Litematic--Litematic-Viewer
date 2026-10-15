@@ -1,4 +1,4 @@
-# 投影预览 1.0.17.7
+# 投影预览 1.0.17.8
 
 离线查看 Minecraft Litematica 投影（`.litematic`）的桌面软件：不需要启动 Minecraft，即可打开投影、
 实时 3D 预览、漫游查看方块与容器内容，并导出 PNG 图片或动画 GIF。
@@ -262,6 +262,7 @@ LOD 预览只按需读取此范围内的区块，扩大视距会补充加载，�
 - 钟的四种悬挂方式。
 - 装饰陶罐随朝向旋转的四面纹样（纹样从投影保存的数据读取，兼容新旧格式；没有纹样的面使用砖面）。
 - 床继续使用当前原版资源的方块模型。
+- 铜傀儡雕像按原版 26.3 特殊渲染器显示，支持站立、坐姿、奔跑、星形四种姿势，四个朝向及氧化、涂蜡变种；普通预览、分块预览和图片导出共用模型。雕像是方块，与活动铜傀儡生物实体分别处理。
 
 EBE 模型的来源说明和 LGPL 许可证随包放在 `assets/builtin/static-block-entities`。
 另有内置包 `fast-chest`（快速箱子模型）、`block-entity-textures`（头颅模型与图集条目）与
@@ -454,7 +455,7 @@ powershell -ExecutionPolicy Bypass -File package.ps1
 
 ## 相关文档
 
-- [CHANGELOG.md](评估与测评/CHANGELOG.md)：从 1.0.9 到 1.0.17.7 的逐版本改动与验证数据。
+- [CHANGELOG.md](评估与测评/CHANGELOG.md)：从 1.0.9 到 1.0.17.8 的逐版本改动与验证数据。
 - [RESEARCH_NOTES.md](评估与测评/RESEARCH_NOTES.md)：技术选型、原版算法对照与实施蓝图。
 - [TODO.md](评估与测评/TODO.md)：已完成项与后续待办。
 - [Sodium与EBE渲染优化评估.md](评估与测评/Sodium与EBE渲染优化评估.md)：对照 Sodium 与 Enhanced Block Entities 的优化评估。

@@ -573,7 +573,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
             // block holds. The block's model is still emitted below, because the game draws both.
             this.emitFluid(mesh, state, x, y, z);
         }
-        if (id.equals("minecraft:decorated_pot")||id.equals("minecraft:conduit")||SpecialBlockGeometry.banner(id)) return;
+        if (id.equals("minecraft:decorated_pot")||id.equals("minecraft:conduit")||SpecialBlockGeometry.banner(id)||BlockRegistry.isCopperGolemStatue(id)) return;
 
         // A blockstate may resolve to several models (multipart: fences, walls, panes,
         // redstone wire, brewing stands, ...). Emit every applicable one.

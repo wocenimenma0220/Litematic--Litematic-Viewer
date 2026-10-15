@@ -148,6 +148,10 @@ public final class BlockRegistry {
             propValues.putIfAbsent("cracked", valuesFor(List.of("false","true")));
         }
         if (blockId.equals("minecraft:lectern"))propValues.putIfAbsent("has_book",valuesFor(List.of("false","true")));
+        if (isCopperGolemStatue(blockId)) {
+            propValues.putIfAbsent("facing", valuesFor(List.of("north","east","south","west")));
+            propValues.putIfAbsent("copper_golem_pose", valuesFor(List.of("standing","sitting","running","star")));
+        }
         if (blockId.endsWith("_wall_banner"))propValues.putIfAbsent("facing",valuesFor(List.of("north","east","south","west")));
         else if(blockId.endsWith("_banner"))propValues.putIfAbsent("rotation",valuesFor(java.util.stream.IntStream.range(0,16).mapToObj(Integer::toString).toList()));
         if ((blockId.endsWith("_wall_head") || blockId.endsWith("_wall_skull")) && !propValues.containsKey("facing")) {
@@ -245,6 +249,15 @@ public final class BlockRegistry {
     private static final java.util.Set<String> MODELLESS_BLOCKS = java.util.Set.of(
         "minecraft:chest", "minecraft:trapped_chest", "minecraft:ender_chest"
     );
+
+    private static final java.util.Set<String> COPPER_GOLEM_STATUES = java.util.Set.of(
+        "minecraft:copper_golem_statue", "minecraft:exposed_copper_golem_statue",
+        "minecraft:weathered_copper_golem_statue", "minecraft:oxidized_copper_golem_statue",
+        "minecraft:waxed_copper_golem_statue", "minecraft:waxed_exposed_copper_golem_statue",
+        "minecraft:waxed_weathered_copper_golem_statue", "minecraft:waxed_oxidized_copper_golem_statue"
+    );
+
+    public static boolean isCopperGolemStatue(String blockId) { return COPPER_GOLEM_STATUES.contains(blockId); }
 
     /**
      * Property sets for other blocks whose blockstate json ignores a property the game keeps.

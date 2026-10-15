@@ -4,6 +4,7 @@ import io.github.litematicrender.nbt.*;
 import io.github.litematicrender.render.Image;
 import io.github.litematicrender.schematic.SchematicEntity;
 import io.github.litematicrender.world.BlockState;
+import io.github.litematicrender.world.BlockRegistry;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import static io.github.litematicrender.render.scene.EntityGeometry.*;
@@ -24,7 +25,7 @@ final class SpecialBlockGeometry {
         for(int i=0;i<pairs.length;i+=2)LEGACY_PATTERNS.put(pairs[i],pairs[i+1]);
     }
     SpecialBlockGeometry(EntityGeometry geometry,Map<String,Image> generated,Blocks blocks,java.util.function.Predicate<BlockState> opaque,int top){this.geometry=geometry;this.generated=generated;this.blocks=blocks;this.opaque=opaque;this.top=top;}
-    static boolean supports(String id){return banner(id)||id.equals("minecraft:lectern")||id.equals("minecraft:conduit")||id.equals("minecraft:beacon");}
+    static boolean supports(String id){return banner(id)||id.equals("minecraft:lectern")||id.equals("minecraft:conduit")||id.equals("minecraft:beacon")||BlockRegistry.isCopperGolemStatue(id);}
     static boolean banner(String id){return id.startsWith("minecraft:")&&(id.endsWith("_banner")||id.endsWith("_wall_banner"));}
     static int dye(String name){for(int i=0;i<DYES.length;i++)if(DYES[i].equals(name))return COLORS[i];return COLORS[0];}
     private static int dye(NbtElement value){if(value instanceof NbtScalars.NbtString s)return dye(s.value);return COLORS[Math.max(0,Math.min(15,(int)SchematicEntity.number(value,0)))];}
@@ -33,6 +34,7 @@ final class SpecialBlockGeometry {
         else if(state.blockId.equals("minecraft:lectern")&&"true".equals(state.getValue("has_book")))book(mesh,state,x,y,z,light);
         else if(state.blockId.equals("minecraft:conduit"))conduit(mesh,x,y,z,light);
         else if(state.blockId.equals("minecraft:beacon"))beacon(mesh,x,y,z);
+        else if(BlockRegistry.isCopperGolemStatue(state.blockId))CopperGolemStatueGeometry.emit(geometry,mesh,state,x,y,z,texture(CopperGolemStatueGeometry.texture(state.blockId)),light);
     }
     private String texture(String id){Image image=geometry.image(id);if(image!=null)generated.putIfAbsent(id,image);return id;}
     private void banner(SceneMesh mesh,BlockState state,NbtCompound tag,int x,int y,int z,float[] light){
