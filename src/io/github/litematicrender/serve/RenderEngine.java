@@ -59,6 +59,9 @@ public final class RenderEngine implements AutoCloseable {
      * {@code QuickLitematicaPreviewAccess.drawMesh}, which fits-drags without rebuilding.
      */
     private SceneMesh scene;
+    private SceneBuilder sceneBuilder;
+    private SceneMesh selectedScene;
+    private String selectedSceneKey;
     private SceneMesh pickedScene;
     private io.github.litematicrender.render.scene.ScenePicker picker;
     private BlockInspector inspector;
@@ -120,6 +123,24 @@ public final class RenderEngine implements AutoCloseable {
     }
     public synchronized void invalidateScene() { this.scene=null;this.sceneKey=null; }
     public synchronized void releaseStreaming(){clearStream();}
+    /** Voxel selection needs no geometry, lighting or entity inspection. */
+    public synchronized Map<String,Object> selectBlock(double[] origin,double[] direction,double maximum)throws Exception {
+        if(schematic==null)throw new IllegalStateException("请先打开投影");
+        double length=0;for(int i=0;i<3;i++){if(!Double.isFinite(origin[i])||Math.abs(origin[i])>30000000||!Double.isFinite(direction[i]))throw new IllegalArgumentException("无效的选择射线");length+=direction[i]*direction[i];}
+        length=Math.sqrt(length);if(!Double.isFinite(length)||length<1e-12||!Double.isFinite(maximum)||maximum<=0)throw new IllegalArgumentException("无效的选择距离");maximum=Math.min(maximum,65536);
+        int[] cell=new int[3],step=new int[3];double[] next=new double[3],delta=new double[3];
+        for(int a=0;a<3;a++){double d=direction[a]/length;cell[a]=(int)Math.floor(origin[a]);step[a]=d>0?1:d<0?-1:0;delta[a]=d==0?Double.POSITIVE_INFINITY:Math.abs(1/d);next[a]=d==0?Double.POSITIVE_INFINITY:((d>0?cell[a]+1:cell[a])-origin[a])/d;}
+        double distance=0;
+        for(int n=0;n<200000&&distance<=maximum;n++){
+            for(var region:schematic.regions().values()){
+                var p=region.blockOrigin();int x=cell[0]-p.x(),y=cell[1]-p.y(),z=cell[2]-p.z();
+                if(x<0||y<0||z<0||x>=region.blocks.sizeX||y>=region.blocks.sizeY||z>=region.blocks.sizeZ)continue;
+                var block=region.blocks.get(x,y,z);if(!block.isAir()&&!List.of("minecraft:barrier","minecraft:light","minecraft:structure_void").contains(block.blockId))return Map.of("hit",true,"position",List.of(cell[0],cell[1],cell[2]));
+            }
+            int a=next[0]<=next[1]&&next[0]<=next[2]?0:next[1]<=next[2]?1:2;distance=next[a];cell[a]+=step[a];next[a]+=delta[a];
+        }
+        return Map.of("hit",false);
+    }
     public synchronized Map<String,Object> pickBlock(double[] origin,double[] direction,double maximum) throws Exception {
         ensureResources();
         if(this.schematic==null)throw new IllegalStateException("请先打开投影");
@@ -289,6 +310,7 @@ public final class RenderEngine implements AutoCloseable {
     /** Reads a .litematic and reports its metadata; caches the parse for the next render. */
     public synchronized Map<String, Object> open(Path file) throws Exception {
         ensureResources();
+        selectedScene=null;selectedSceneKey=null;
         LitematicaSchematic schem = loadSchematic(file);
         LitematicaSchematic.Metadata md = schem.metadata();
 
@@ -333,6 +355,7 @@ public final class RenderEngine implements AutoCloseable {
         try {
         long t0 = System.currentTimeMillis();
         SceneMesh mesh = sceneMesh(settings.realLighting,settings.lightingEnabled);
+        settings.selectionMesh=selectionScene(settings);
         // "interactive" trades resolution for latency: see SchematicRenderer.interactiveScale.
         RenderSettings effective = settings.interactiveMaxEdge > 0
             ? SchematicRenderer.interactiveScale(settings, settings.interactiveMaxEdge)
@@ -370,8 +393,8 @@ public final class RenderEngine implements AutoCloseable {
     private SceneMesh sceneMesh(boolean realLighting) { return sceneMesh(realLighting,true); }
 
     private SceneMesh sceneMesh(boolean realLighting,boolean lightingEnabled) {
+        SceneBuilder preparedBuilder=streamBuilder!=null&&streamRealLighting==realLighting&&streamLightingEnabled==lightingEnabled?streamBuilder:null;
         this.sceneLightingEnabled=lightingEnabled;
-        streamBuilder=null;
         this.sceneRealLighting=realLighting;
         String key = this.schematicPath + "|" + this.loadedBuiltinNames + "|" + this.loadedUserPackNames
             + "|" + System.identityHashCode(this.baker) + "|" + realLighting + "|" + lightingEnabled;
@@ -379,17 +402,38 @@ public final class RenderEngine implements AutoCloseable {
             this.sceneFromMesh = true;
             return this.scene;
         }
-        SceneBuilder builder = new SceneBuilder(this.registry, this.baker, this.colormaps, this.atlas).realLighting(realLighting).lightingEnabled(lightingEnabled);
-        if(streamIndex!=null&&streamSkins!=null)builder.skinSnapshot(streamSkins);
+        SceneBuilder builder = preparedBuilder!=null?preparedBuilder:new SceneBuilder(this.registry, this.baker, this.colormaps, this.atlas).realLighting(realLighting).lightingEnabled(lightingEnabled);
+        if(preparedBuilder==null&&streamIndex!=null&&streamSkins!=null)builder.skinSnapshot(streamSkins);
         this.pickedScene=null;this.picker=null;this.inspector=null;
-        for (var e : this.schematic.regions().entrySet()) {
+        if(preparedBuilder==null)for (var e : this.schematic.regions().entrySet()) {
             var r = e.getValue();
             var origin=r.blockOrigin();builder.addRegion(r, new int[]{origin.x(),origin.y(),origin.z()});
         }
         this.scene = builder.build();
+        this.sceneBuilder=builder;
         this.sceneKey = key;
         this.sceneFromMesh = false;
         return this.scene;
+    }
+
+    private SceneMesh selectionScene(RenderSettings settings){
+        if(settings.selectionMin==null){selectedScene=null;selectedSceneKey=null;return null;}
+        if(streamIndex!=null&&streamBuilder==null&&streamRealLighting==settings.realLighting&&streamLightingEnabled==settings.lightingEnabled){
+            streamBuilder=new SceneBuilder(registry,baker,colormaps,atlas).realLighting(streamRealLighting).lightingEnabled(streamLightingEnabled);
+            if(streamSkins!=null)streamBuilder.skinSnapshot(streamSkins);
+            for(var region:schematic.regions().values()){var p=region.blockOrigin();streamBuilder.addRegion(region,new int[]{p.x(),p.y(),p.z()});}
+            streamBuilder.prepareStreaming();
+        }
+        SceneBuilder source=streamBuilder!=null&&streamRealLighting==settings.realLighting&&streamLightingEnabled==settings.lightingEnabled?streamBuilder:null;
+        if(source==null){sceneMesh(settings.realLighting,settings.lightingEnabled);source=sceneBuilder;}
+        String key=schematicDigest+"|"+System.identityHashCode(source)+"|"+java.util.Arrays.toString(settings.selectionMin)+"|"+java.util.Arrays.toString(settings.selectionMax);
+        if(!key.equals(selectedSceneKey)){selectedScene=null;selectedScene=source.buildSelection(settings.selectionMin,settings.selectionMax);selectedSceneKey=key;}
+        return selectedScene;
+    }
+    public synchronized Map<String,Object> exportSelectionScene(Path atlasOut,Path meshOut,RenderSettings settings)throws Exception{
+        ensureResources();if(schematic==null)throw new IllegalStateException("请先打开投影");if(settings.selectionMin==null)throw new IllegalArgumentException("请选择渲染范围");
+        long start=System.currentTimeMillis();SceneMesh mesh=selectionScene(settings);atlas.rebakeAtTick(0);atlas.stitched.writePng(atlasOut);int vertices=MeshExporter.write(mesh,atlas,meshOut);
+        return Map.of("atlas",atlasOut.toAbsolutePath().toString(),"mesh",meshOut.toAbsolutePath().toString(),"meshFormat","LMESH4","quads",mesh.quadCount,"vertices",vertices,"exportMillis",System.currentTimeMillis()-start);
     }
 
     /** Renders without writing a file; used for fast previews of a crop or a thumbnail. */
@@ -464,7 +508,7 @@ public final class RenderEngine implements AutoCloseable {
         boolean cached=!force&&key.equals(streamKey)&&streamIndex!=null&&Files.isRegularFile(meshOut);
         long begin=System.currentTimeMillis();
         if(!cached) {
-            scene=null;sceneKey=null;picker=null;pickedScene=null;clearStream();
+            scene=null;sceneKey=null;sceneBuilder=null;selectedScene=null;selectedSceneKey=null;picker=null;pickedScene=null;clearStream();
             var builder=new SceneBuilder(registry,baker,colormaps,atlas).realLighting(realLighting).lightingEnabled(lightingEnabled).overview(overview);
             if(snapshot!=null)builder.skinSnapshot(snapshot);
             if(progress!=null)builder.preparationProgress(progress::stage);
@@ -595,6 +639,10 @@ public final class RenderEngine implements AutoCloseable {
      */
     public synchronized Map<String, Object> renderAnimation(Path outGif, RenderSettings settings,
                                                             int ticks, int delayCs) throws Exception {
+        return renderAnimation(outGif,settings,ticks,delayCs,(stage,completed,total)->{});
+    }
+
+    public synchronized Map<String,Object> renderAnimation(Path outGif,RenderSettings settings,int ticks,int delayCs,GifWriter.Progress progress)throws Exception {
         ensureResources();
         if (this.schematic == null) {
             throw new IllegalStateException("no schematic open; call open first");
@@ -602,7 +650,9 @@ public final class RenderEngine implements AutoCloseable {
         RenderDiagnostics.reset();
         try {
         long t0 = System.currentTimeMillis();
-        SceneMesh mesh=sceneMesh(settings.realLighting);
+        progress.update("building",0,Math.max(2,Math.min(RenderSettings.MAX_ANIMATION_FRAMES,ticks)));
+        SceneMesh mesh=sceneMesh(settings.realLighting,settings.lightingEnabled);
+        settings.selectionMesh=selectionScene(settings);
         long buildMillis=System.currentTimeMillis()-t0;
         int frameCount=Math.max(2,Math.min(RenderSettings.MAX_ANIMATION_FRAMES,ticks));
         var camera=SchematicRenderer.fitRotationCamera(mesh,settings);
@@ -618,13 +668,17 @@ public final class RenderEngine implements AutoCloseable {
             s.backgroundImage = settings.backgroundImage;
             s.checkerSize = settings.checkerSize;
             s.ambientShadeScale = settings.ambientShadeScale;
+            s.lightingEnabled = settings.lightingEnabled;
+            s.realLighting = settings.realLighting;
+            s.selectionMin=settings.selectionMin;s.selectionMax=settings.selectionMax;
+            s.selectionMesh=settings.selectionMesh;
             s.animationTick = settings.animationTick + (int)(i * (long)delayCs / 5);
             camera.rotationDeg=s.rotationDeg;
             camera.update();
             Image frame=SchematicRenderer.renderWithCamera(mesh,this.atlas,s,camera);
             renderingNanos[0]+=System.nanoTime()-renderStart;
             return frame;
-        });
+        },progress);
         long t2 = System.currentTimeMillis();
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -670,7 +724,7 @@ public final class RenderEngine implements AutoCloseable {
         }
         LitematicaSchematic schem = LitematicaSchematic.load(file);
         clearStream();
-        scene=null;sceneKey=null;picker=null;pickedScene=null;
+        scene=null;sceneKey=null;sceneBuilder=null;selectedScene=null;selectedSceneKey=null;picker=null;pickedScene=null;
         schem.materialize(this.registry);
         this.schematic = schem;
         this.schematicPath = file;
@@ -680,7 +734,7 @@ public final class RenderEngine implements AutoCloseable {
     }
 
     private void closeResources() {
-        clearStream();scene=null;sceneKey=null;
+        clearStream();scene=null;sceneKey=null;sceneBuilder=null;selectedScene=null;selectedSceneKey=null;
         if (this.resources != null) {
             this.resources.close();
             this.resources = null;

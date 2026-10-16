@@ -41,9 +41,14 @@ public final class GifWriter {
     }
 
     @FunctionalInterface public interface FrameSource { Image render(int tick) throws Exception; }
+    @FunctionalInterface public interface Progress { void update(String stage,int completed,int total); }
 
     /** Render once, spool raw pixels, then encode with one stable palette and bounded frame memory. */
     public static void writeFrames(Path file, int frameCount, int delayCs, FrameSource source) throws Exception {
+        writeFrames(file,frameCount,delayCs,source,(stage,completed,total)->{});
+    }
+
+    public static void writeFrames(Path file,int frameCount,int delayCs,FrameSource source,Progress progress)throws Exception {
         if (frameCount <= 0) throw new IOException("no frames to write");
         Path destination = file.toAbsolutePath(), parent = destination.getParent();
         Files.createDirectories(parent);
@@ -59,6 +64,7 @@ public final class GifWriter {
                     if (frame.width!=gif.width || frame.height!=gif.height) throw new IOException("frame size mismatch");
                     histogram.add(frame);
                     for (int pixel:frame.pixels()) pixels.writeInt(pixel);
+                    progress.update("rendering",tick+1,frameCount);
                 }
             }
             histogram.finish(gif.palette);
@@ -70,6 +76,7 @@ public final class GifWriter {
                 for(int tick=0;tick<frameCount;tick++) {
                     for(int i=0;i<frame.pixels().length;i++) frame.pixels()[i]=pixels.readInt();
                     gif.writeFrame(frame,delayCs);
+                    progress.update("encoding",tick+1,frameCount);
                 }
                 gif.writeTrailer();
             }
@@ -131,12 +138,12 @@ public final class GifWriter {
             int[] px = f.pixels();
             for (int argb : px) {
                 int a = (argb >>> 24) & 0xFF;
-                if (a < 128) continue;              // transparent: index 0 handles it
+                if (a == 0) continue;              // partially transparent detail still needs colour
                 int r = (argb >>> 16) & 0xFF, g = (argb >>> 8) & 0xFF, b = argb & 0xFF;
-                sums[0] += r; sums[1] += g; sums[2] += b; total++;
+                sums[0] += r*(long)a; sums[1] += g*(long)a; sums[2] += b*(long)a; total+=a;
                 // 5 bits per channel, but rounded so neighbouring colours share a bucket.
                 int key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-                histogram.merge(key, 1L, Long::sum);
+                histogram.merge(key, (long)a, Long::sum);
             }
         }
 
@@ -167,13 +174,13 @@ public final class GifWriter {
         }
     }
 
-    /** Nearest palette entry by squared RGB distance; 0 when the pixel is mostly transparent. */
+    /** Nearest colour; coverage is resolved separately at each pixel position. */
     private int nearest(int argb) {
         Integer cached = this.nearestCache.get(argb);
         if (cached != null) return cached;
         int result;
         int a = (argb >>> 24) & 0xFF;
-        if (a < 128) {
+        if (a == 0) {
             result = 0;
         } else {
             int r = (argb >>> 16) & 0xFF, g = (argb >>> 8) & 0xFF, b = argb & 0xFF;
@@ -244,7 +251,8 @@ public final class GifWriter {
         byte[] indices = new byte[this.width * this.height];
         for (int y = 0; y < this.height; y++) {
             for (int x = 0; x < this.width; x++) {
-                indices[y * this.width + x] = (byte) nearest(img.pixel(x, y));
+                int argb=img.pixel(x,y),alpha=argb>>>24;
+                indices[y * this.width + x] = (byte)(visible(alpha,x,y)?nearest(argb):0);
             }
         }
         writeLzw(indices);
@@ -253,6 +261,18 @@ public final class GifWriter {
 
     private void writeTrailer() {
         this.out.write(0x3B);
+    }
+
+    /** GIF has binary alpha. A fixed 16x16 Bayer mask preserves fractional coverage without flicker. */
+    private static boolean visible(int alpha,int x,int y) {
+        if(alpha==0)return false;
+        if(alpha==255)return true;
+        int threshold=0;
+        for(int bit=0;bit<4;bit++) {
+            int xb=(x>>bit)&1,yb=(y>>bit)&1;
+            threshold=(threshold<<2)|((xb^yb)<<1)|yb;
+        }
+        return alpha*256>(threshold*2+1)*255/2;
     }
 
     // ------------------------------------------------------------------

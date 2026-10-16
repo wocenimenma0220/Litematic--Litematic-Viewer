@@ -3,10 +3,18 @@
 /** Exposes a narrow, explicit API to the renderer; no Node objects cross the boundary. */
 
 const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('exportsApi',{
+  start:(kind,params)=>ipcRenderer.invoke('exports:start',{kind,params}),
+  list:()=>ipcRenderer.invoke('exports:list'),
+  cancel:id=>ipcRenderer.invoke('exports:cancel',id),
+  onUpdate:callback=>{const handler=(_event,job)=>callback(job);ipcRenderer.on('exports:update',handler);return()=>ipcRenderer.removeListener('exports:update',handler);},
+});
 contextBridge.exposeInMainWorld('appUi', {
   settings: () => ipcRenderer.invoke('ui:settings'),
+  setKeybindings: bindings=>ipcRenderer.invoke('ui:keybindings',bindings),
   setPreviewBackend: (backend) => ipcRenderer.invoke('ui:previewBackend', backend),
   setLargeProjection: (enabled)=>ipcRenderer.invoke('ui:largeProjection',enabled),
+  setProjectionMode: mode=>ipcRenderer.invoke('ui:projectionMode',mode),
   setLightingEnabled: (enabled)=>ipcRenderer.invoke('ui:lightingEnabled',enabled),
   setShowCoordinates: (enabled)=>ipcRenderer.invoke('ui:showCoordinates',enabled),
   setClearCacheOnExit: (enabled)=>ipcRenderer.invoke('ui:clearCacheOnExit',enabled),
@@ -31,6 +39,10 @@ contextBridge.exposeInMainWorld('appUi', {
 contextBridge.exposeInMainWorld('engine', {
   status: () => ipcRenderer.invoke('engine:status'),
   ping: () => ipcRenderer.invoke('engine:ping'),
+  selectBlock: ray=>ipcRenderer.invoke('engine:selectBlock',ray),
+  exportSelectionScene: options=>ipcRenderer.invoke('engine:exportSelectionScene',options),
+  releaseSelection: ()=>ipcRenderer.invoke('engine:releaseSelection'),
+  readSelectionChunk:(id,offset,length)=>ipcRenderer.invoke('engine:readSelectionChunk',{id,offset,length}),
   loadResources: (root) => ipcRenderer.invoke('engine:loadResources', root),
   open: (file) => ipcRenderer.invoke('engine:open', file),
   render: (params) => ipcRenderer.invoke('engine:render', params),

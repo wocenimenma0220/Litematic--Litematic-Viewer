@@ -3,6 +3,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const { nativeImage } = require('electron');
+const {memoryPolicy}=require('./performance-policy');
+const {cleanShortcutBindings}=require('./renderer/keyboard-shortcuts');
 const BACKGROUND_LIMIT = 10 * 1024 * 1024;
 const BACKGROUND_MODES = new Set(['checker', 'sky', 'white', 'dark', 'image', 'color']);
 const AUTHOR_URL = 'https://www.bilibili.com/video/BV1UT42167xb/?share_source=copy_web&vd_source=d1e157c09b3321a7ecaf103abcde1586';
@@ -21,15 +23,17 @@ class UiSettings {
       try { stored = JSON.parse(await fs.readFile(this.file, 'utf8')) || {}; } catch { /* first launch */ }
       this.state = {
         hideWelcome: stored.hideWelcome === true,
+        keybindings:cleanShortcutBindings(stored.keybindings),
         sidebarCollapsed: stored.sidebarCollapsed === true,
         realLighting: stored.realLighting !== false,
         lodPreview: stored.lodPreview !== false,
         largeProjection: stored.largeProjection === true,
+        projectionMode: ['auto','full','streaming'].includes(stored.projectionMode)?stored.projectionMode:'auto',
         lightingEnabled: stored.lightingEnabled !== false,
         showCoordinates: stored.showCoordinates === true,
         clearCacheOnExit: stored.clearCacheOnExit !== false,
         viewDistance: Number.isInteger(stored.viewDistance)&&stored.viewDistance>=1&&stored.viewDistance<=128?stored.viewDistance:6,
-        geometryBudgetMB: Number.isInteger(stored.geometryBudgetMB)&&stored.geometryBudgetMB>=32&&stored.geometryBudgetMB<=16384?stored.geometryBudgetMB:256,
+        geometryBudgetMB: Number.isInteger(stored.geometryBudgetMB)&&stored.geometryBudgetMB>=32&&stored.geometryBudgetMB<=16384?stored.geometryBudgetMB:memoryPolicy().geometryBudgetMB,
         preloadMode: ['distance','full','streaming'].includes(stored.preloadMode)?stored.preloadMode:'streaming',
         previewBackend: stored.previewBackend === 'cpu' ? 'cpu' : 'gpu',
         backgroundMode: BACKGROUND_MODES.has(stored.backgroundMode) ? stored.backgroundMode : 'checker',
@@ -59,10 +63,12 @@ class UiSettings {
     } catch { /* no imported background */ }
     return {
       showWelcome: !stored.hideWelcome,
+      keybindings:stored.keybindings,
       sidebarCollapsed: stored.sidebarCollapsed,
       realLighting: stored.realLighting,
       lodPreview: stored.lodPreview,
       largeProjection: stored.largeProjection,
+      projectionMode: stored.projectionMode,
       lightingEnabled: stored.lightingEnabled,
       showCoordinates: stored.showCoordinates,
       clearCacheOnExit: stored.clearCacheOnExit,

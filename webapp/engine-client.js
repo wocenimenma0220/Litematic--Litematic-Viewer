@@ -10,6 +10,7 @@
 
 const { spawn } = require('node:child_process');
 const readline = require('node:readline');
+const {memoryPolicy}=require('./performance-policy');
 
 class EngineClient {
   /**
@@ -39,7 +40,7 @@ class EngineClient {
     this.stopping = null;
     return new Promise((resolve, reject) => {
       const args = [
-        '-Xmx4g',
+        `-Xmx${memoryPolicy().heapMB}m`,
         '-Dfile.encoding=UTF-8',
         '-Djava.net.useSystemProxies=true',
         `-Dlitematicrender.home=${this.opts.home}`,

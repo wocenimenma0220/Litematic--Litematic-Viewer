@@ -1,4 +1,4 @@
-﻿# Builds the distributable "green" (portable) package for Litematic Render.
+# Builds the distributable "green" (portable) package for Litematic Render.
 #
 #   pwsh -File package.ps1
 #
@@ -28,7 +28,7 @@ param(
     [ValidatePattern('^[\p{L}\p{N}_-]+$')]
     [string]$PackageName = '投影预览',
     [ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')]
-    [string]$Version = '1.0.17.10'
+    [string]$Version = '1.0.17.15'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -161,7 +161,7 @@ foreach ($part in @('textures', 'profiles')) {
 Write-Host "`n[5/7] Copying the Electron shell..."
 $stageWebapp = Join-Path $stageDir 'webapp'
 New-Item -ItemType Directory -Path $stageWebapp | Out-Null
-foreach ($f in @('main.js', 'preload.js', 'engine-client.js', 'runtime.js', 'ui-settings.js', 'scene-transfer.js', 'cache-cleanup.js', 'package.json', 'app.ico', 'icon.png')) {
+foreach ($f in @('main.js', 'preload.js', 'engine-client.js', 'background-exports.js', 'runtime.js', 'performance-policy.js', 'ui-settings.js', 'scene-transfer.js', 'cache-cleanup.js', 'package.json', 'app.ico', 'icon.png')) {
     Copy-Item (Join-Path $webapp $f) -Destination $stageWebapp
 }
 Copy-Item (Join-Path $webapp 'renderer') -Destination $stageWebapp -Recurse

@@ -14,6 +14,8 @@
     <span class="appname">投影预览</span>
     <nav class="menu">
       <button class="menubtn" id="menuFile">文件</button>
+      <button class="menubtn" id="menuKeys">按键</button>
+      <button class="menubtn" id="menuCommands">指令</button>
       <div class="dropdown hidden" id="menuFileDrop">
         <button id="menuOpenSchematic">打开投影 (.litematic)…</button>
         <button id="menuImportPack">导入材质包…</button>
@@ -70,7 +72,9 @@
           </select>
         </div>
         <p class="muted small" id="previewBackendInfo">GPU 支持实时旋转、缩放和漫游。</p>
-        <label class="check"><input id="largeProjection" type="checkbox" />大投影渲染</label>
+        <div class="field"><label for="projectionMode">模型加载</label><select id="projectionMode"><option value="auto">自动选择</option><option value="full">完整加载</option><option value="streaming">大投影 · 分块加载</option></select></div>
+        <input id="largeProjection" type="checkbox" hidden />
+        <p id="projectionModeInfo" class="muted small">根据方块数量与空间范围自动选择，小投影完整加载，大投影先看总览。</p>
         <p class="muted small">开启后先显示简化总览，再按视角逐块补充完整细节；已载入部分会保留。</p>
         <label class="check"><input id="lodPreview" type="checkbox" checked />按距离调整细节（LOD）</label>
         <p class="muted small">大投影渲染开启时，近处保留完整细节；关闭 LOD 后区块始终使用完整精度。PNG / GIF 始终保持完整精度。</p>
@@ -91,7 +95,7 @@
           <label for="geometryBudget">预览几何缓存上限（MB）</label>
           <input id="geometryBudget" type="number" min="32" max="16384" step="1" value="256" />
         </div>
-        <p class="muted small">32–16384 MB，默认 256。修改后立即生效并保存，仅用于 LOD 预览；投影、光照和贴图另占内存。</p>
+        <p class="muted small">32–16384 MB，初始值按机器内存选择，可手动调整。投影、光照和贴图另占内存。</p>
         <div class="field">
           <label for="viewDistance">漫游视距 <span id="viewDistanceVal" class="val">6 区块</span></label>
           <div class="distance-controls">
@@ -149,6 +153,20 @@
       </section>
 
       <section class="group">
+        <h2>查看内部</h2>
+        <label class="check"><input id="selectionRenderEnabled" type="checkbox" disabled />启用选择渲染</label>
+        <label class="check"><input id="selectionEnabled" type="checkbox" disabled />选择渲染工具 (B)</label>
+        <p class="muted small">选择渲染控制显示；工具只负责选点。关闭工具仍保留选区显示。</p>
+        <div class="field"><label for="selectionMode">显示范围</label><select id="selectionMode" disabled><option value="region">圈选区域</option><option value="layer">逐层查看</option></select></div>
+        <div id="selectionCornerControls" class="field"><label for="selectionActiveCorner">移动角点</label><select id="selectionActiveCorner" disabled><option value="0">角点 1</option><option value="1">角点 2</option></select></div>
+        <div id="selectionLayerControls" class="hidden"><label for="selectionLayer">高度 Y</label><div class="distance-controls"><input id="selectionSlider" type="range" min="0" max="1" value="0" /><input id="selectionLayer" type="number" step="1" value="0" aria-label="查看层高度" /></div></div>
+        <p id="selectionInfo" class="muted small" aria-live="polite"></p>
+        <p id="selectionMeshInfo" class="muted small" aria-live="polite"></p>
+        <p id="selectionHelp" class="muted small">开启后左键选角点 1，右键选角点 2；Alt＋滚轮沿观察方向移动当前角点，逐层模式下切换高度。漫游移动与转向照常，选择优先于查看方块。</p>
+        <button id="selectionReset" type="button">清除角点</button>
+        <button id="openCommand" type="button">输入指令 (/)</button>
+      </section>
+      <section class="group">
         <h2>输出</h2>
         <div class="field">
           <label for="size">分辨率</label>
@@ -165,6 +183,7 @@
         </label>
         <p class="muted small">网格仅用于预览，导出时自动透明。</p>
         <p class="muted small">GIF 围绕模型中心轴匀速旋转一周，缩放固定，50 帧/秒、共 480 帧，时长 9.6 秒；俯仰角、分辨率和背景沿用以上设置。</p>
+        <p class="muted small">PNG / GIF 在后台导出，可继续预览和选点；退出软件会停止未完成的任务。透明 GIF 使用透明抖动保留半透明细节；选择颜色或图片背景可获得平滑的淡化效果。</p>
         <div class="field">
           <label for="bg">背景色</label>
           <input type="color" id="bg" value="#ffffff" />
@@ -218,7 +237,16 @@
         </section>
         <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">渲染中…</span></div>
       </div>
-      <div id="log" class="log"></div>
+      <section id="exportTasks" class="export-tasks hidden" aria-label="后台导出任务"></section>
+      <section class="console" aria-label="日志与指令">
+        <div id="log" class="log" role="log" aria-label="运行日志"></div>
+        <form id="commandBar" class="command-bar" aria-label="输入指令">
+          <label for="commandInput" class="command-prompt" title="输入指令">&gt;</label>
+          <input id="commandInput" type="text" autocomplete="off" spellcheck="false" aria-label="指令输入" aria-describedby="commandFeedback" placeholder="输入指令，例如 //select 1" />
+          <button id="commandSubmit" type="submit">执行</button>
+          <p id="commandFeedback" class="muted small hidden" role="status" aria-live="polite"></p>
+        </form>
+      </section>
     </main>
   </div>
   <dialog id="materialDialog" class="material-dialog" aria-labelledby="materialTitle">
@@ -243,8 +271,15 @@
     </div>
     <p id="welcomeError" class="welcome-error hidden" role="alert"></p>
   </dialog>
+  <dialog id="shortcutDialog" class="shortcut-dialog"><div class="dialog-title"><h2>自定义按键</h2><button id="closeShortcuts" type="button">关闭</button></div><p class="muted small">点击右侧绑定，再按新键。左右 Shift、Ctrl、Alt 视为同一键；鼠标键也可绑定。</p><div id="shortcutRows"></div><p id="shortcutFeedback" class="muted small" aria-live="polite"></p><button id="cancelBinding" class="hidden" type="button">取消本次绑定</button><button id="resetShortcuts" type="button">恢复默认按键</button><p class="muted small">视角：拖动鼠标旋转，滚轮缩放；漫游：移动鼠标转向。微调：按住设置的修饰键并滚动滚轮。</p></dialog>
+  <dialog id="commandsDialog" class="shortcut-dialog"><div class="dialog-title"><h2>支持的指令</h2><button id="closeCommands" type="button">关闭</button></div><p class="muted small">选择工具开启后可设置角点；坐标按投影自身坐标输入，支持负数。省略坐标时选取准星所指方块，漫游中未指向方块时使用当前位置。</p><div id="commandRows"></div><button id="commandsInput" type="button">打开指令输入</button></dialog>
+  <script src="keyboard-shortcuts.js"></script>
+  <script src="render-selection.js"></script>
   <script src="gpu-view.js"></script>
   <script src="lod-stream.js"></script>
   <script src="renderer.js"></script>
+  <script src="selection-tools.js"></script>
+  <script src="shortcuts-ui.js"></script>
+  <script src="export-tools.js"></script>
 </body>
 </html>

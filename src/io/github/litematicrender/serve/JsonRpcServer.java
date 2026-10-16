@@ -125,6 +125,7 @@ public final class JsonRpcServer {
             case "exportMaterials": return this.engine.exportMaterials(Path.of(require(p,"out")),MiniJson.asString(p.get("scope"),"combined"),MiniJson.asBool(p.get("waterAsIce"),false));
             case "skinSettings": return this.engine.skinSettings();
             case "pickBlock": return this.engine.pickBlock(vector(p,"origin"),vector(p,"direction"),MiniJson.asDouble(p.get("maximum"),4096));
+            case "selectBlock": return this.engine.selectBlock(vector(p,"origin"),vector(p,"direction"),MiniJson.asDouble(p.get("maximum"),4096));
             case "setSkinOnline": return this.engine.setSkinOnline(MiniJson.asBool(p.get("online"),true));
             case "importSkin": return this.engine.importSkin(require(p,"identity"),Path.of(require(p,"path")));
 
@@ -158,11 +159,12 @@ public final class JsonRpcServer {
                 Path out = Path.of(require(p, "out"));
                 int ticks = MiniJson.asInt(p.get("frames"), RenderSettings.DEFAULT_ANIMATION_FRAMES);
                 int delayCs = MiniJson.asInt(p.get("delay"), RenderSettings.DEFAULT_ANIMATION_DELAY_CS);
-                return this.engine.renderAnimation(out, s, ticks, delayCs);
+                return this.engine.renderAnimation(out,s,ticks,delayCs,(stage,completed,total)->emit(Map.of("event","exportProgress","stage",stage,"completed",completed,"total",total)));
             }
 
 
             case "exportCachedScene": return this.engine.exportCachedStreamScene(MiniJson.asBool(p.get("force"),false),MiniJson.asBool(p.get("realLighting"),false),MiniJson.asBool(p.get("lightingEnabled"),true));
+            case "exportSelectionScene": return this.engine.exportSelectionScene(Path.of(require(p,"atlas")),Path.of(require(p,"mesh")),settingsFrom(p));
             case "beginPreview": return this.engine.beginPreview(MiniJson.asBool(p.get("force"),false),MiniJson.asBool(p.get("realLighting"),false),MiniJson.asBool(p.get("lightingEnabled"),true));
             case "previewStatus": return this.engine.previewStatus(require(p,"id"),MiniJson.asInt(p.get("after"),-1),MiniJson.asObject(p.get("view")));
             case "previewLive": return this.engine.previewLive(require(p,"id"));
@@ -211,6 +213,8 @@ public final class JsonRpcServer {
         }
         s.ambientShadeScale = (float) MiniJson.asDouble(p.get("ambientShadeScale"), s.ambientShadeScale);
         s.lightingEnabled = MiniJson.asBool(p.get("lightingEnabled"),true);
+        var selection=MiniJson.asObject(p.get("selection"));
+        if(selection!=null){s.selectionMin=vector(selection,"min");s.selectionMax=vector(selection,"max");for(int i=0;i<3;i++)if(!Double.isFinite(s.selectionMin[i])||!Double.isFinite(s.selectionMax[i])||Math.abs(s.selectionMin[i])>30000001||Math.abs(s.selectionMax[i])>30000001||s.selectionMin[i]>=s.selectionMax[i])throw new IllegalArgumentException("无效的渲染选择范围");}
         s.realLighting = MiniJson.asBool(p.get("realLighting"),false);
         s.animationTick = MiniJson.asInt(p.get("tick"), s.animationTick);
         s.interactiveMaxEdge = MiniJson.asInt(p.get("interactive"), s.interactiveMaxEdge);

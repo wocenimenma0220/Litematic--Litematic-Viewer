@@ -20,6 +20,8 @@ public final class RenderSettings {
     public boolean lightingEnabled = true;
     public boolean realLighting = false;   // opt in to 1.0.10 sky, emission and AO
     public float previewZoom = 1f;
+    public double[] selectionMin,selectionMax;
+    public io.github.litematicrender.render.scene.SceneMesh selectionMesh;
 
     /**
      * Animation tick used for animated textures, in game ticks.

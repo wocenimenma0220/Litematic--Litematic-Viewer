@@ -91,7 +91,7 @@ const state = {
   view: null,
   viewReady: false,
   previewBackend: 'gpu', cpuPreview: false, cpuPreviewReady: false,
-  lodPreview: true, largeProjection:false,
+  lodPreview: true, largeProjection:false,projectionMode:'auto',
   geometryBudgetMB:256,
   preloadMode:'streaming',
   viewDistance:6,
@@ -141,6 +141,7 @@ function setBusy(on, text) {
   els.busy.classList.toggle('hidden', !on);
   if (text) els.busyText.textContent = text;
   updateButtons();
+  if(!on&&typeof scheduleSelectionMesh==='function')scheduleSelectionMesh();
 }
 
 function updateButtons() {
@@ -158,6 +159,7 @@ function updateButtons() {
   els.realLighting.disabled = busy || !els.lightingEnabled.checked;
   els.lightingEnabled.disabled = busy;
   els.largeProjection.disabled=busy||state.previewBackend==='cpu';
+  $('projectionMode').disabled=els.largeProjection.disabled;
   els.previewBackend.disabled = busy;
   els.lodPreview.disabled = busy || state.previewBackend === 'cpu'||!state.largeProjection;
   els.geometryBudget.disabled=busy||state.previewBackend==='cpu'||!state.largeProjection;
@@ -182,6 +184,7 @@ function renderParams(width, height) {
     transparent,
     realLighting: els.realLighting.checked,
     lightingEnabled: els.lightingEnabled.checked,
+    selection:state.selection?.bounds(state.viewReady&&state.view?{min:state.view.min,max:state.view.max}:null)||undefined,
   };
   if (!transparent) {
     params.backgroundMode = els.bgMode.value;
@@ -297,14 +300,18 @@ function updateProgressiveStatus(stats){
   setStatus(stats.running?'模型准备完成，正在载入当前视角…':stats.budgetLimited?'已显示当前预算内的细节，可调整视角或提高缓存上限。':'3D 视图已就绪。',stats.running||stats.budgetLimited?'':'ok');
 }
 async function buildView(options = {}) {
+  if(typeof invalidateSelectionMesh==='function')invalidateSelectionMesh();
+  resolveProjectionMode();
   const generation=++gpuBuildGeneration;
   state.overview=false;state.scenePreparing=false;
   state.livePreview=false;state.firstDetailLoaded=false;
   invalidateCpuPreview();
   if(state.view?.stream)state.view.disposeBuffers();
   if(state.previewBackend==='cpu') {
+    if(state.selection){state.selection.enabled=false;if(typeof updateSelectionUi==='function')updateSelectionUi();}
     if(state.fly)setFly(false);
     state.cpuPreview=true;state.cpuPreviewReady=false;state.viewReady=false;
+    if(typeof updateSelectionUi==='function')updateSelectionUi();
     if(state.view){state.view.disposeBuffers();if(state.view.texture)state.view.gl.deleteTexture(state.view.texture);state.view.texture=null;}
     els.gl.classList.add('hidden');els.crosshair.classList.add('hidden');updatePreviewBackend();
     await window.engine.releaseStreaming();els.streamInfo.textContent='';
@@ -392,7 +399,7 @@ async function buildView(options = {}) {
     state.cpuPreview=true;state.cpuPreviewReady=false;updatePreviewBackend();
     await requestPreview(false);
   } finally {
-    if(generation===gpuBuildGeneration){state.scenePreparing=false;setBusy(false);state.previewJobId=null;updateProgressiveStatus(state.view?.stream?.stats());if(state.view?.stream?.progressComplete)refreshSceneCacheInfo().catch(()=>{});if(state.view?.stream&&state.viewReady&&!state.overview&&state.preloadMode!=='streaming')startPreload();}
+    if(generation===gpuBuildGeneration){state.scenePreparing=false;setBusy(false);state.previewJobId=null;updateProgressiveStatus(state.view?.stream?.stats());if(state.view?.stream?.progressComplete)refreshSceneCacheInfo().catch(()=>{});if(state.view?.stream&&state.viewReady&&!state.overview&&state.preloadMode!=='streaming')startPreload();if(typeof scheduleSelectionMesh==='function')scheduleSelectionMesh();}
   }
 }
 
@@ -443,6 +450,7 @@ async function applyGpuScene(res,options={}) {
     state.view.uploadAtlas(atlasImage);
     atlasImage.close();
     state.viewReady = true;
+    if(typeof updateSelectionUi==='function')updateSelectionUi();
     if(!res.overview)setStatus('模型数据已载入，正在准备当前视角…','');
     els.crosshair.classList.toggle('hidden',!state.fly);
     if(state.fly&&!state.animHandle)state.animHandle=requestAnimationFrame(flyTick);
@@ -577,6 +585,8 @@ function drawView(interactive = false) {
   const background = backdropColor();
   const view = state.view;
   const cam = state.fly ? flyCamera() : orbitCamera();
+  cam.focus=state.selection?.bounds({min:view.min,max:view.max})||null;
+  cam.selectionBox=state.selection?.enabled?state.selection.range({min:view.min,max:view.max}):null;
   cam.background = background;
   cam.lodEnabled=state.lodPreview;
   if(state.overview){cam.lodEnabled=true;cam.lodLevel=3;}
@@ -654,7 +664,7 @@ function flyTick(time) {
   }
   const elapsed=state.flyTime===null?1/60:Math.max(0,Math.min(.05,(time-state.flyTime)/1000));
   state.flyTime=time;
-  const speed = (state.keys.has('ControlLeft') || state.keys.has('ControlRight') ? 24 : 9) * elapsed;
+  const speed = (heldShortcut('boost',state.keys) ? 24 : 9) * elapsed;
   const yaw = state.flyYaw;
   const forward = [-Math.sin(yaw), 0, -Math.cos(yaw)];
   const right = [Math.cos(yaw), 0, -Math.sin(yaw)];
@@ -664,15 +674,13 @@ function flyTick(time) {
     p[1] += vec[1] * sign * scale;
     p[2] += vec[2] * sign * scale;
   };
-  if (state.keys.has('KeyW')) step(forward, 1, speed);
-  if (state.keys.has('KeyS')) step(forward, -1, speed);
-  if (state.keys.has('KeyD')) step(right, 1, speed);
-  if (state.keys.has('KeyA')) step(right, -1, speed);
-  if (state.keys.has('Space')) p[1] += speed;
-  if (state.keys.has('KeyC') || state.keys.has('ShiftLeft') || state.keys.has('ShiftRight')) p[1] -= speed;
-  if (state.keys.has('KeyW') || state.keys.has('KeyS') || state.keys.has('KeyA') ||
-      state.keys.has('KeyD') || state.keys.has('Space') || state.keys.has('KeyC') ||
-      state.keys.has('ShiftLeft') || state.keys.has('ShiftRight')) state.flyDirty = true;
+  if (heldShortcut('forward',state.keys)) step(forward,1,speed);
+  if (heldShortcut('backward',state.keys)) step(forward,-1,speed);
+  if (heldShortcut('right',state.keys)) step(right,1,speed);
+  if (heldShortcut('left',state.keys)) step(right,-1,speed);
+  if (heldShortcut('up',state.keys)) p[1]+=speed;
+  if (heldShortcut('down',state.keys)) p[1]-=speed;
+  if(['forward','backward','left','right','up','down'].some(action=>heldShortcut(action,state.keys)))state.flyDirty=true;
   if(state.flyDirty)drawView(true);
   state.animHandle = requestAnimationFrame(flyTick);
 }
@@ -732,7 +740,7 @@ els.viewport.addEventListener('pointerdown', (e) => {
 });
 
 els.viewport.addEventListener('mousedown',e=>{
-  if(state.fly&&e.button===0&&!e.target.closest('.block-inspector'))flyPress={distance:0,x:e.clientX,y:e.clientY,resume:!state.flyLookActive};
+  if(state.fly&&mouseShortcut('inspect',e)&&!e.target.closest('.block-inspector'))flyPress={distance:0,x:e.clientX,y:e.clientY,resume:!state.flyLookActive};
 });
 // Pointer Lock guarantees mousemove events, including platforms that suppress pointermove.
 els.viewport.addEventListener('mousemove', (e) => {
@@ -799,7 +807,7 @@ function endDrag(e) {
 els.viewport.addEventListener('mouseup',e=>{
   if(state.fly){
     const press=flyPress;flyPress=null;
-    if(e.button===0&&press&&Math.max(press.distance,Math.hypot(e.clientX-press.x,e.clientY-press.y))<=4){
+    if(mouseShortcut('inspect',e)&&press&&Math.max(press.distance,Math.hypot(e.clientX-press.x,e.clientY-press.y))<=4){
       if(press.resume||!els.inspector.classList.contains('hidden')){closeInspector();resumeFlyLook();}
       else inspectCenter();
     }
@@ -906,7 +914,7 @@ els.importBackground.addEventListener('click', async () => {
 });
 function updateFullscreen(fullscreen) {
   state.fullscreen = fullscreen;
-  els.fullscreen.textContent = fullscreen ? '退出全屏 (F11)' : '全屏 (F11)';
+  els.fullscreen.textContent = `${fullscreen?'退出全屏':'全屏'} (${shortcutHint('fullscreen')})`;
   els.fullscreen.setAttribute('aria-pressed', String(fullscreen));
   drawView();
 }
@@ -953,6 +961,8 @@ window.__uiReady = (async () => {
     const settings = await window.appUi.settings();
     state.previewBackend=settings.previewBackend==='cpu'?'cpu':'gpu';
     state.largeProjection=settings.largeProjection===true;els.largeProjection.checked=state.largeProjection;
+    state.projectionMode=settings.projectionMode||'auto';$('projectionMode').value=state.projectionMode;
+    setShortcutBindings(settings.keybindings);
     els.lightingEnabled.checked=settings.lightingEnabled!==false;
     els.showCoordinates.checked=settings.showCoordinates===true;
     $('clearCacheOnExit').checked=settings.clearCacheOnExit!==false;
@@ -977,12 +987,12 @@ window.__uiReady = (async () => {
  */
 function updateFlyMouseHint() {
   els.flyMouseHint.classList.toggle('hidden',!state.fly);
-  els.flyMouseHint.textContent=state.flyLockPending?'正在锁定鼠标…':state.flyLookActive?'鼠标已锁定；Esc 释放鼠标并暂停视角。':'鼠标已释放，视角暂停。点击预览区重新锁定；V 退出漫游。';
+  els.flyMouseHint.textContent=state.flyLockPending?'正在锁定鼠标…':state.flyLookActive?`鼠标已锁定；${shortcutHint('close')} 释放鼠标并暂停视角。`:`鼠标已释放，视角暂停。点击预览区重新锁定；${shortcutHint('fly')} 退出漫游。`;
   document.body.classList.toggle('mouse-look',state.fly&&state.flyLookActive);
 }
 function pauseFlyLook(release=true) {
   state.flyLockGeneration++;state.flyLockPending=false;
-  state.flyLookActive=false;state.flyDiscardLockDelta=false;state.keys.clear();hoverPoint=null;flyPress=null;
+  state.flyLookActive=false;state.flyDiscardLockDelta=false;state.keys.clear();shortcutHeldKeys.clear();hoverPoint=null;flyPress=null;
   if(release&&document.pointerLockElement===els.viewport)document.exitPointerLock();
   updateFlyMouseHint();
 }
@@ -996,6 +1006,7 @@ function activateFlyLook() {
 function resumeFlyLook() {
   if(!state.fly)return;
   if(document.pointerLockElement===els.viewport){activateFlyLook();return;}
+  if(state.flyLockPending)return;
   const generation=++state.flyLockGeneration;
   state.flyLookActive=false;state.flyLockPending=true;hoverPoint=null;updateFlyMouseHint();
   const failed=()=>{
@@ -1034,7 +1045,7 @@ function setFly(on) {
   if (on) {
     resetFlyToCenter();
     document.body.classList.add('flying');
-    els.flyBtn.textContent = '退出漫游 (V)';
+    els.flyBtn.textContent = `退出漫游 (${shortcutHint('fly')})`;
     els.flyHint.classList.remove('hidden');
     resumeFlyLook();
     if (!state.animHandle) state.animHandle = requestAnimationFrame(flyTick);
@@ -1042,7 +1053,7 @@ function setFly(on) {
     pauseFlyLook();
     closeInspector();
     document.body.classList.remove('flying');
-    els.flyBtn.textContent = '进入漫游 (V)';
+    els.flyBtn.textContent = `进入漫游 (${shortcutHint('fly')})`;
     els.flyHint.classList.add('hidden');
     if (state.animHandle) {
       cancelAnimationFrame(state.animHandle);
@@ -1054,28 +1065,36 @@ function setFly(on) {
 
 els.flyBtn.addEventListener('click', () => setFly(!state.fly));
 
+// While the viewport owns input, keep Tab / Space / Enter / Alt from focusing or
+// activating page controls. This does not stop action handlers or form typing.
+function preventPreviewKeyDefault(event){
+  if(shortcutInputTarget(event)||document.querySelector('dialog[open]'))return;
+  if(state.fly&&(state.flyLookActive||state.flyLockPending)||state.selection?.enabled&&isShortcut('nudge',event))event.preventDefault();
+}
+window.addEventListener('keydown',preventPreviewKeyDefault,true);
+window.addEventListener('keyup',preventPreviewKeyDefault,true);
 window.addEventListener('keydown', (e) => {
-  if (e.code === 'F11') { e.preventDefault(); setFullscreen(!state.fullscreen); return; }
+  if(document.querySelector('dialog[open]')||bindingCaptureAction||shortcutInputTarget(e))return;
+  if (isShortcut('fullscreen',e)) { e.preventDefault(); if(!e.repeat)setFullscreen(!state.fullscreen); return; }
   if (els.welcome.open) return;
-  if (e.code === 'Escape' && state.fullscreen) { e.preventDefault(); setFullscreen(false); return; }
-  if(e.code==='Escape'&&state.fly){closeInspector();pauseFlyLook();e.preventDefault();return;}
-  // Never swallow typing in a form control.
-  if (e.target && /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
-  if (e.code === 'KeyV') {
-    setFly(!state.fly);
+  if (isShortcut('close',e) && state.fullscreen) { e.preventDefault(); setFullscreen(false); return; }
+  if(isShortcut('close',e)&&state.fly){closeInspector();pauseFlyLook();e.preventDefault();return;}
+  if (isShortcut('fly',e)) {
+    if(!e.repeat)setFly(!state.fly);
     e.preventDefault();
     return;
   }
+  if(state.fly&&isShortcut('inspect',e)){e.preventDefault();if(!e.repeat)inspectCenter();return;}
   if(e.target.closest && e.target.closest('.block-inspector'))return;
   if (!state.fly||!state.flyLookActive) return;
-  if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'ShiftLeft', 'ShiftRight', 'ControlLeft', 'ControlRight'].includes(e.code)) {
-    state.keys.add(e.code);
+  if (['forward','backward','left','right','up','down','boost'].some(action=>isShortcut(action,e))) {
+    state.keys.add(normalizedKey(e.code));
     e.preventDefault();          // Space would otherwise scroll the panel
     if (!state.animHandle) state.animHandle = requestAnimationFrame(flyTick);
   }
 });
 
-window.addEventListener('keyup', (e) => state.keys.delete(e.code));
+window.addEventListener('keyup', (e) => state.keys.delete(normalizedKey(e.code)));
 // A window that loses focus never delivers the keyup, which would leave the camera drifting.
 window.addEventListener('blur', () => {state.keys.clear();if(state.fly)pauseFlyLook();});
 
@@ -1142,6 +1161,7 @@ async function loadFile(file) {
     if(opening!==fileOpenGeneration)return;
     state.file = file;
     state.info = info;
+    if(state.selection){state.selection.reset();selectionSession++;}
     showFileInfo(info);
     log(`已打开 ${info.name}（${info.regions.length} 个区域，${info.totalBlocks} 方块）`, 'ok');
     if (info.unresolved) log('存在无法解析的资源：' + JSON.stringify(info.unresolved), 'err');
@@ -1253,9 +1273,21 @@ els.lightingEnabled.addEventListener('change',async()=>{
 });
 els.largeProjection.addEventListener('change',async()=>{
   const enabled=els.largeProjection.checked;setBusy(true,'更新模型…');
-  try{await window.appUi.setLargeProjection(enabled);state.largeProjection=enabled;if(state.file)await buildView({preserveCamera:true});}
+  try{await window.appUi.setLargeProjection(enabled);state.projectionMode=enabled?'streaming':'full';$('projectionMode').value=state.projectionMode;state.largeProjection=enabled;if(state.file)await buildView({preserveCamera:true});}
   catch(error){els.largeProjection.checked=state.largeProjection;log(error.message,'err');}
   finally{setBusy(false);}
+});
+function resolveProjectionMode(){
+  const info=state.info,span=info?.size;
+  const automatic=!!info&&(info.totalBlocks>=1000000||span&&Math.max(span.x,span.y,span.z)>512);
+  state.largeProjection=state.projectionMode==='streaming'||state.projectionMode==='auto'&&automatic;
+  els.largeProjection.checked=state.largeProjection;
+  $('projectionModeInfo').textContent=state.projectionMode==='auto'?`自动选择：${state.largeProjection?'分块加载，先显示总览':'完整加载'}。可手动指定加载方式。`:state.largeProjection?'先显示总览，再逐块补充完整细节。':'一次载入完整模型，适合较小投影。';
+}
+$('projectionMode').addEventListener('change',async()=>{
+  const previous=state.projectionMode;state.projectionMode=$('projectionMode').value;
+  try{await window.appUi.setProjectionMode(state.projectionMode);if(state.file)await buildView({preserveCamera:true});else{resolveProjectionMode();updateButtons();}}
+  catch(error){state.projectionMode=previous;$('projectionMode').value=previous;resolveProjectionMode();log(error.message,'err');}
 });
 els.showCoordinates.addEventListener('change',async()=>{
   const enabled=els.showCoordinates.checked;
@@ -1363,21 +1395,10 @@ async function exportPng() {
   const suggested = ((state.info && state.info.name) || 'render') + `_${size}.png`;
   const out = await window.shellApi.savePng(suggested);
   if (!out) return;
-  setBusy(true, `渲染 ${size}×${size}…`);
   try {
-    const res = await window.engine.render({ ...renderParams(size, size), out, diagnostics: true });
-    state.lastResult = res;
-    els.stats.textContent = `${res.width}×${res.height} · 渲染 ${res.renderMillis} ms · 编码 ${res.encodeMillis} ms`;
-    log(`已导出：${res.path}`, 'ok');
-    if (res.unresolved) {
-      const keys = Object.keys(res.unresolved);
-      log(`注意：有 ${keys.length} 类资源未能解析（${keys.slice(0, 3).join('; ')}${keys.length > 3 ? ' …' : ''}）`, 'err');
-    }
-    window.shellApi.reveal(res.path);
+    await startBackgroundExport('png',{...renderParams(size,size),out,diagnostics:true});
   } catch (err) {
     log('导出失败：' + err.message, 'err');
-  } finally {
-    setBusy(false);
   }
 }
 
@@ -1387,20 +1408,15 @@ async function exportGif() {
   const out = await window.shellApi.saveGif(suggested);
   if (!out) return;
   const size = Number(els.size.value);
-  setBusy(true, '渲染旋转动画…');
   try {
-    const res = await window.engine.renderAnimation({
+    await startBackgroundExport('gif',{
       ...renderParams(size, size),
       out,
       frames: 480,
       delay: 2,
     });
-    log(`已导出动画：${res.path}（${res.frames} 帧）`, 'ok');
-    window.shellApi.reveal(res.path);
   } catch (err) {
     log('动画导出失败：' + err.message, 'err');
-  } finally {
-    setBusy(false);
   }
 }
 

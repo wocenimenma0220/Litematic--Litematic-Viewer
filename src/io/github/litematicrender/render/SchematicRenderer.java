@@ -93,6 +93,8 @@ public final class SchematicRenderer {
         s.realLighting = settings.realLighting;
         s.lightingEnabled = settings.lightingEnabled;
         s.previewZoom = settings.previewZoom;
+        s.selectionMin=settings.selectionMin;s.selectionMax=settings.selectionMax;
+        s.selectionMesh=settings.selectionMesh;
         s.animationTick = settings.animationTick;
         return s;
     }
@@ -107,25 +109,34 @@ public final class SchematicRenderer {
         Rasterizer raster = new Rasterizer(settings.width, settings.height, cam, atlas);
         raster.clear(RenderBackground.isTransparent(settings) ? 0 : (settings.backgroundColor | 0xFF000000));
         RenderBackground.fill(raster.color, settings);
+        raster.selectionMin=settings.selectionMin;raster.selectionMax=settings.selectionMax;raster.selectionPass=settings.selectionMin==null?0:1;
 
         // Opaque passes first (depth-tested, order independent). Cutout writes depth for its opaque
         // texels, which is what hides translucent geometry behind a solid wall.
-        for (SceneMesh.MeshQuad q : mesh.solid) draw(raster, q, settings, false);
-        for (SceneMesh.MeshQuad q : mesh.cutout) draw(raster, q, settings, false);
+        SceneMesh foreground=settings.selectionMesh!=null?settings.selectionMesh:mesh;
+        for (SceneMesh.MeshQuad q : foreground.solid) draw(raster, q, settings, false);
+        for (SceneMesh.MeshQuad q : foreground.cutout) draw(raster, q, settings, false);
         raster.writeColor=false;
-        for(SceneMesh.MeshQuad q:mesh.waterMask)draw(raster,q,settings,false);
+        for(SceneMesh.MeshQuad q:foreground.waterMask)draw(raster,q,settings,false);
         raster.writeColor=true;
 
         // Sort all blending materials together; fixed material passes reverse the order at some angles.
-        if(mesh.translucentBsp!=null) {
+        if(foreground.translucentBsp!=null) {
             double[] origin=new double[3],point=new double[3],towardEye=new double[3];cam.toView(0,0,0,origin);
             for(int axis=0;axis<3;axis++){cam.toView(axis==0?1:0,axis==1?1:0,axis==2?1:0,point);towardEye[axis]=point[2]-origin[2];}
-            mesh.translucentBsp.visit(towardEye,true,q->draw(raster,q,settings,true));
+            foreground.translucentBsp.visit(towardEye,true,q->draw(raster,q,settings,true));
         } else {
-            List<SceneMesh.MeshQuad> blended = new ArrayList<>(mesh.portalSorted);
-            blended.addAll(mesh.fluidSorted);blended.addAll(mesh.translucentSorted);drawSorted(raster,blended,cam,settings);
+            List<SceneMesh.MeshQuad> blended = new ArrayList<>(foreground.portalSorted);
+            blended.addAll(foreground.fluidSorted);blended.addAll(foreground.translucentSorted);drawSorted(raster,blended,cam,settings);
         }
 
+        if(settings.selectionMin!=null){
+            raster.selectionPass=2;
+            var ghosts=new ArrayList<SceneMesh.MeshQuad>(mesh.solid);ghosts.addAll(mesh.cutout);
+            if(mesh.translucentBsp!=null)ghosts.addAll(mesh.translucentBsp.faces);
+            else {ghosts.addAll(mesh.portalSorted);ghosts.addAll(mesh.fluidSorted);ghosts.addAll(mesh.translucentSorted);}
+            drawSorted(raster,ghosts,cam,settings);
+        }
         return raster.color;
     }
 

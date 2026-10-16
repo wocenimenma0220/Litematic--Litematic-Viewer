@@ -16,6 +16,8 @@ public final class Rasterizer {
     public final Camera camera;
     private final SpriteAtlas atlas;
     public boolean writeColor=true;
+    public double[] selectionMin,selectionMax;
+    public int selectionPass;
 
     public Rasterizer(int width, int height, Camera camera, SpriteAtlas atlas) {
         this.color = new Image(width, height);
@@ -98,6 +100,10 @@ public final class Rasterizer {
             float u0,float v0,float u1,float v1,float u2,float v2,float u3,float v3,
             String spriteId,int rgb,Image direct,float tintR,float tintG,float tintB,
             float shade,float[] ao,boolean translucent,boolean doubleSided,int[] vertexColors) {
+        if(selectionPass==2)translucent=true;
+        double biasX=0,biasY=0,biasZ=0;
+        if(selectionPass!=0){double ax=wx1-wx0,ay=wy1-wy0,az=wz1-wz0,bx=wx2-wx0,by=wy2-wy0,bz=wz2-wz0;
+            biasX=ay*bz-az*by;biasY=az*bx-ax*bz;biasZ=ax*by-ay*bx;double size=Math.max(1e-9,Math.sqrt(biasX*biasX+biasY*biasY+biasZ*biasZ));biasX*=.001/size;biasY*=.001/size;biasZ*=.001/size;}
         Camera cam = this.camera;
         cam.toView(wx0, wy0, wz0, V0);
         cam.toView(wx1, wy1, wz1, V1);
@@ -176,6 +182,14 @@ public final class Rasterizer {
                     vShade = ao == null ? shade : (float) (m0 * ao[0] + m1 * ao[2] + m2 * ao[3]) * shade;
                     weight0=m0;weight1=m1;weight2=m2;corner1=2;corner2=3;
                 }
+                if(selectionPass!=0){
+                    double wx=weight0*wx0+weight1*(corner1==1?wx1:wx2)+weight2*(corner2==2?wx2:wx3);
+                    double wy=weight0*wy0+weight1*(corner1==1?wy1:wy2)+weight2*(corner2==2?wy2:wy3);
+                    double wz=weight0*wz0+weight1*(corner1==1?wz1:wz2)+weight2*(corner2==2?wz2:wz3);
+                    wx-=biasX;wy-=biasY;wz-=biasZ;
+                    boolean inside=wx>=selectionMin[0]-.0001&&wx<=selectionMax[0]+.0001&&wy>=selectionMin[1]-.0001&&wy<=selectionMax[1]+.0001&&wz>=selectionMin[2]-.0001&&wz<=selectionMax[2]+.0001;
+                    if(selectionPass==1&&!inside||selectionPass==2&&inside)continue;
+                }
                 if (vShade > 1f) vShade = 1f; else if (vShade < 0f) vShade = 0f;
                 uFrac = Math.min(0.9999f, Math.max(0f, uFrac));
                 vFrac = Math.min(0.9999f, Math.max(0f, vFrac));
@@ -215,6 +229,7 @@ public final class Rasterizer {
                 }
 
                 int idx = y * w + x;
+                if(selectionPass==2)argb=(Math.round((argb>>>24)*.1f)<<24)|(argb&0xffffff);
                 int srcA = argb >>> 24;
                 if (!translucent) {
                     if (srcA < 26) continue;

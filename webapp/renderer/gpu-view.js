@@ -30,16 +30,38 @@ const VERTEX_SHADER = `
 attribute vec3 aPos;
 attribute vec2 aUv;
 attribute vec3 aColor;
+attribute vec3 aCompactOrigin;
+attribute vec2 aCompactCode;
+attribute vec4 aTile0;
+attribute vec4 aTile1;
+attribute vec4 aTile2;
+attribute vec4 aTile3;
 
 uniform mat4 uViewProj;
+uniform float uCompact;
+uniform vec3 uSectionOrigin;
 
 varying vec2 vUv;
 varying vec3 vColor;
+varying vec3 vWorld;
 
 void main() {
-  gl_Position = uViewProj * vec4(aPos, 1.0);
-  vUv = aUv;
-  vColor = aColor;
+  vec3 pos=aPos;
+  vUv=aUv;vColor=aColor;
+  if(uCompact>0.5){
+    float vertex=aPos.x;
+    float corner=mod(floor(aCompactCode.y/pow(4.0,vertex)),4.0);
+    vec2 offset=vec2(corner>=2.0?1.0:0.0,corner==1.0||corner==2.0?1.0:0.0);
+    pos=uSectionOrigin+aCompactOrigin;
+    if(aCompactCode.x<0.5)pos.yz+=offset;
+    else if(aCompactCode.x<1.5)pos.zx+=offset;
+    else pos.xy+=offset;
+    vec4 tile=vertex<0.5?aTile0:vertex<1.5?aTile1:vertex<2.5?aTile2:aTile3;
+    vUv=tile.xy/65535.0;
+    vColor=vec3(mod(tile.z,256.0),floor(tile.z/256.0),mod(tile.w,256.0))/255.0;
+  }
+  vWorld=pos;
+  gl_Position=uViewProj*vec4(pos,1.0);
 }
 `;
 
@@ -49,18 +71,26 @@ precision highp float;
 uniform sampler2D uAtlas;
 uniform float uAlphaCutoff;
 uniform float uColorOnly;
+uniform float uFocusPass;
+uniform vec3 uFocusMin;
+uniform vec3 uFocusMax;
 
 varying vec2 vUv;
 varying vec3 vColor;
+varying vec3 vWorld;
 
 void main() {
+  vec3 focusPosition=vWorld;
+  /*focusSurfaceBias*/
+  bool inside=all(greaterThanEqual(focusPosition,uFocusMin-vec3(0.0001)))&&all(lessThanEqual(focusPosition,uFocusMax+vec3(0.0001)));
+  if(uFocusPass>0.5&&((uFocusPass<1.5&&!inside)||(uFocusPass>1.5&&inside)))discard;
   vec4 tex = uColorOnly > 0.5 ? vec4(1.0) : texture2D(uAtlas, vUv);
   // Cutout layers discard fully transparent texels so they neither blend nor write depth. This is
   // what lets a glass pane's empty middle show what is behind it.
   if (uAlphaCutoff > 0.0 && tex.a < uAlphaCutoff) discard;
   if (tex.a <= 0.0) discard;
   vec3 rgb = tex.rgb * vColor;
-  gl_FragColor = vec4(rgb, tex.a);
+  gl_FragColor = vec4(rgb,tex.a*(uFocusPass>1.5?0.1:1.0));
 }
 `;
 
@@ -77,20 +107,30 @@ class GpuView {
     });
     if (!gl) throw new Error('WebGL unavailable');
     this.gl = gl;
-    this.program = this._program(VERTEX_SHADER, FRAGMENT_SHADER);
+    this.instancing=gl.getExtension('ANGLE_instanced_arrays');
+    this.compactGpu=!!this.instancing&&gl.getParameter(gl.MAX_VERTEX_ATTRIBS)>=9;
+    const vertexSource=this.compactGpu?VERTEX_SHADER:'attribute vec3 aPos;attribute vec2 aUv;attribute vec3 aColor;uniform mat4 uViewProj;varying vec2 vUv;varying vec3 vColor;varying vec3 vWorld;void main(){vUv=aUv;vColor=aColor;vWorld=aPos;gl_Position=uViewProj*vec4(aPos,1.0);}';
+    const derivatives=gl.getExtension('OES_standard_derivatives');
+    const fragmentSource=(derivatives?'#extension GL_OES_standard_derivatives : enable\n':'')+FRAGMENT_SHADER.replace('/*focusSurfaceBias*/',derivatives?'if(uFocusPass>0.5){vec3 normal=cross(dFdx(vWorld),dFdy(vWorld));focusPosition-=normal/max(length(normal),0.000001)*0.001;}':'');
+    this.program = this._program(vertexSource, fragmentSource);
     this.attr = {
       pos: gl.getAttribLocation(this.program, 'aPos'),
       uv: gl.getAttribLocation(this.program, 'aUv'),
       color: gl.getAttribLocation(this.program, 'aColor'),
+      compactOrigin:gl.getAttribLocation(this.program,'aCompactOrigin'),compactCode:gl.getAttribLocation(this.program,'aCompactCode'),
+      tiles:[0,1,2,3].map(i=>gl.getAttribLocation(this.program,'aTile'+i)),
     };
     this.uni = {
       viewProj: gl.getUniformLocation(this.program, 'uViewProj'),
       atlas: gl.getUniformLocation(this.program, 'uAtlas'),
       alphaCutoff: gl.getUniformLocation(this.program, 'uAlphaCutoff'),
       colorOnly: gl.getUniformLocation(this.program, 'uColorOnly'),
+      compact:gl.getUniformLocation(this.program,'uCompact'),sectionOrigin:gl.getUniformLocation(this.program,'uSectionOrigin'),
+      focusPass:gl.getUniformLocation(this.program,'uFocusPass'),focusMin:gl.getUniformLocation(this.program,'uFocusMin'),focusMax:gl.getUniformLocation(this.program,'uFocusMax'),
 
     };
     this.buffers = [];
+    this.compactCorners=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.compactCorners);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([0,1,2,3]),gl.STATIC_DRAW);
     this.texture = null;
     this.min = [0, 0, 0];
     this.max = [1, 1, 1];
@@ -105,8 +145,10 @@ class GpuView {
 
   _program(vs, fs) {
     const gl = this.gl;
+    const compiled=[];
     const make = (type, source) => {
       const s = gl.createShader(type);
+      compiled.push(s);
       gl.shaderSource(s, source);
       gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
@@ -115,6 +157,7 @@ class GpuView {
       return s;
     };
     const p = gl.createProgram();
+    try {
     gl.attachShader(p, make(gl.VERTEX_SHADER, vs));
     gl.attachShader(p, make(gl.FRAGMENT_SHADER, fs));
     gl.linkProgram(p);
@@ -122,6 +165,8 @@ class GpuView {
       throw new Error('link: ' + gl.getProgramInfoLog(p));
     }
     return p;
+    }catch(error){gl.deleteProgram(p);throw error;}
+    finally{for(const shader of compiled)gl.deleteShader(shader);}
   }
 
   /**
@@ -548,6 +593,7 @@ class GpuView {
 
   disposeBuffers() {
     this.uploadGeneration=(this.uploadGeneration||0)+1;
+    this.disposeSelection();
     if(this.stream){this.stream.dispose();this.stream=null;}
     for (const b of this.buffers) this.gl.deleteBuffer(b);
     this.buffers = [];
@@ -555,6 +601,16 @@ class GpuView {
     this.sectionGraph=null;
     this.reachableSections=null;
     this.revision++;
+  }
+  disposeSelection(){
+    if(this.selectionView){this.selectionView.destroy();this.selectionView=null;}
+    this.selectionBoundsKey=null;
+  }
+  destroy(){
+    if(this.destroyed)return;this.destroyed=true;this.disposeBuffers();
+    if(this.texture)this.gl.deleteTexture(this.texture);
+    this.gl.deleteBuffer(this.compactCorners);this.gl.deleteProgram(this.program);
+    if(this.focusBuffer)this.gl.deleteBuffer(this.focusBuffer);if(this.focusProgram)this.gl.deleteProgram(this.focusProgram);
   }
   /** Perspective screen ray, using the exact matrix that drew the preview. */
   async uploadLodStream(read,byteLength,options={}) {
@@ -638,8 +694,7 @@ class GpuView {
     };
     gl.viewport(0, 0, w, h);
     const bg = cam.background || [0, 0, 0, 0];
-    gl.clearColor(bg[0], bg[1], bg[2], bg[3]);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    if(!cam.selectionOverlay){gl.clearColor(bg[0], bg[1], bg[2], bg[3]);gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);}
     if (!this.layers || !this.texture) return;
 
     gl.enable(gl.DEPTH_TEST);
@@ -738,10 +793,22 @@ class GpuView {
 
     const stride = FLOATS_PER_VERTEX * 4;
     const frustum = frustumPlanes(viewProj);
-    this.reachableSections=!cam.orbit&&cam.culling!==false&&cam.occlusion!==false
+    this.reachableSections=!cam.focus&&!cam.orbit&&cam.culling!==false&&cam.occlusion!==false
       ? visibleSections(this.sectionGraph,cam.eye,frustum):null;
     this.drawStats={totalQuads:this.quadCount,visibleQuads:0,visibleChunks:0,totalChunks:0,drawCalls:0};
-    if(this.stream){this.stream.draw(cam,frustum);return;}
+    this.resetCompact();
+    gl.uniform1f(this.uni.focusPass,cam.focus?1:0);
+    if(cam.focus){gl.uniform3fv(this.uni.focusMin,cam.focus.min);gl.uniform3fv(this.uni.focusMax,cam.focus.max);}
+    let passes=cam.focusPasses||(cam.focus?[1,2]:[0]);
+    if(cam.focus&&this.selectionView&&this.selectionBoundsKey===JSON.stringify(cam.focus)){
+      const selected=this.selectionView;selected.setFrameBounds(this.min,this.max);
+      selected.draw({...cam,selectionOverlay:true,focusPasses:[1],selectionBox:false});passes=[2];
+      gl.useProgram(this.program);gl.uniformMatrix4fv(this.uni.viewProj,false,viewProj);gl.uniform1f(this.uni.colorOnly,0);this.resetCompact();
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,this.texture);gl.uniform1i(this.uni.atlas,0);
+    }
+    if(this.stream){this.stream.draw({...cam,focusPasses:passes},frustum);if(cam.selectionBox!==false)this.drawFocusBox(cam.focus||cam.selectionBox,viewProj);return;}
+    for(const focusPass of passes){
+    gl.uniform1f(this.uni.focusPass,focusPass);
     for (const layer of this.layers) {
       if (layer.quads === 0) continue;
       this._updateVisibility(layer,frustum,cam.culling!==false,cam);
@@ -752,7 +819,8 @@ class GpuView {
       // PORTAL(2), FLUID(3) and TRANSLUCENT(4) blend; the rest are opaque.
       const mask=layer.ordinal===5;
       const blending = layer.ordinal >= 2&&!mask;
-      if(blending)gl.enable(gl.BLEND);else gl.disable(gl.BLEND);
+      if(focusPass===2&&mask)continue;
+      if(blending||focusPass===2)gl.enable(gl.BLEND);else gl.disable(gl.BLEND);
       gl.colorMask(!mask,!mask,!mask,!mask);
       gl.uniform1f(this.uni.alphaCutoff, layer.ordinal === 1 ? 0.1 : 0.0);
 
@@ -767,7 +835,7 @@ class GpuView {
       // Opaque layers write depth so later geometry is hidden correctly. Blending layers only read
       // depth: they must not occlude each other, because a single sorted order cannot be correct
       // for every viewpoint without an order-independent pass.
-      gl.depthMask(!blending);
+      gl.depthMask(!blending&&focusPass!==2);
 
       const bindVertices = (vbo,base=0) => {
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -806,8 +874,27 @@ class GpuView {
         }
       }
     }
+    }
     gl.depthMask(true);
     gl.colorMask(true,true,true,true);
+    if(cam.selectionBox!==false)this.drawFocusBox(cam.focus||cam.selectionBox,viewProj);
+  }
+
+  resetCompact(){
+    const gl=this.gl;gl.uniform1f(this.uni.compact,0);
+    for(const attr of [this.attr.compactOrigin,this.attr.compactCode,...this.attr.tiles])if(attr>=0){if(this.instancing)this.instancing.vertexAttribDivisorANGLE(attr,0);gl.disableVertexAttribArray(attr);}
+  }
+  drawFocusBox(focus,matrix){
+    if(!focus)return;const gl=this.gl;this.resetCompact();
+    if(!this.focusProgram){
+      this.focusProgram=this._program('attribute vec3 aPos;uniform mat4 uViewProj;void main(){gl_Position=uViewProj*vec4(aPos,1.0);}', 'precision mediump float;void main(){gl_FragColor=vec4(0.25,0.8,1.0,0.85);}');
+      this.focusBuffer=gl.createBuffer();
+    }
+    const vertices=[],corners=Array.from({length:8},(_,i)=>[0,1,2].map(a=>(i&(1<<a)?focus.max:focus.min)[a]));
+    for(let i=0;i<8;i++)for(let a=0;a<3;a++)if(!(i&(1<<a)))vertices.push(...corners[i],...corners[i|(1<<a)]);
+    gl.useProgram(this.focusProgram);const attr=gl.getAttribLocation(this.focusProgram,'aPos');gl.bindBuffer(gl.ARRAY_BUFFER,this.focusBuffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(attr);gl.vertexAttribPointer(attr,3,gl.FLOAT,false,12,0);gl.uniformMatrix4fv(gl.getUniformLocation(this.focusProgram,'uViewProj'),false,matrix);
+    gl.disable(gl.DEPTH_TEST);gl.enable(gl.BLEND);gl.depthMask(false);gl.drawArrays(gl.LINES,0,vertices.length/3);gl.depthMask(true);gl.enable(gl.DEPTH_TEST);gl.useProgram(this.program);
   }
 
   /**

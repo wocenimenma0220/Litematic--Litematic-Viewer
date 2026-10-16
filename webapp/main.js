@@ -16,11 +16,13 @@ const { resolveRuntime } = require('./runtime');
 const { UiSettings, AUTHOR_URL } = require('./ui-settings');
 const { SceneTransfer, INLINE_LIMIT } = require('./scene-transfer');
 const { clearRenderingCache } = require('./cache-cleanup');
+const {BackgroundExports}=require('./background-exports');
 
 /** The project root (…/litematic-render): one level above this file's directory. */
 const APP_HOME = path.resolve(__dirname, '..');
 const uiSettings = new UiSettings(APP_HOME);
 const sceneTransfer = new SceneTransfer();
+const selectionTransfer = new SceneTransfer();
 function diagnostic(message) {
   try {
     fs.mkdirSync(path.join(APP_HOME, 'logs'), { recursive: true });
@@ -36,6 +38,10 @@ app.setAppUserModelId('io.kindasus.projectionpreview');
 
 let mainWindow = null;
 let engine = null;
+let openedSchematic=null,resourceRoot=null;
+const backgroundExports=new BackgroundExports({home:APP_HOME,runtime:resolveRuntime(APP_HOME),onUpdate:job=>{
+  if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('exports:update',job);
+}});
 let shutdownPromise = null;
 let shutdownComplete = false;
 
@@ -59,9 +65,12 @@ function createWindow() {
       sandbox: false,
     },
   });
+  // The app has its own File / Keys / Commands bar. A hidden native menu still
+  // takes focus on Alt release and interrupts pointer-locked selection tools.
+  mainWindow.setMenu(null);
   mainWindow.once('ready-to-show', () => mainWindow.show());
   mainWindow.webContents.on('render-process-gone', (_event, details) => diagnostic('preview process exited: ' + JSON.stringify(details)));
-  mainWindow.webContents.once('destroyed', () => { sceneTransfer.close().catch(() => {}); });
+  mainWindow.webContents.once('destroyed', () => { sceneTransfer.close().catch(() => {});selectionTransfer.close().catch(()=>{}); });
   mainWindow.on('enter-full-screen', () => mainWindow.webContents.send('window:fullscreen', true));
   mainWindow.on('leave-full-screen', () => mainWindow.webContents.send('window:fullscreen', false));
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -104,17 +113,25 @@ ipcMain.handle('engine:status', async () => {
 });
 
 ipcMain.handle('engine:ping', () => engine.call('ping', {}));
-ipcMain.handle('engine:loadResources', async (_e, root) => engine.call('loadResources', {
-  ...(root ? { root } : {}), imports: await packStore.read(),
-}));
+ipcMain.handle('engine:selectBlock',(_event,ray)=>engine.call('selectBlock',ray));
+ipcMain.handle('engine:loadResources', async (_e, root) => {
+  const result=await engine.call('loadResources',{...(root?{root}:{}),imports:await packStore.read()});resourceRoot=root||null;return result;
+});
 ipcMain.handle('engine:open', async (_e, file) => {
   diagnostic('opening schematic: '+file);
-  try {await sceneTransfer.close();await engine.call('cancelPreview',{});const result=await engine.call('open',{path:file});diagnostic('schematic opened: '+file);return result;}
+  try {await sceneTransfer.close();await selectionTransfer.close();await engine.call('cancelPreview',{});const result=await engine.call('open',{path:file});openedSchematic=file;diagnostic('schematic opened: '+file);return result;}
   catch(error){diagnostic('schematic open failed: '+file+'; '+error.message);throw error;}
 });
 ipcMain.handle('engine:render', async (_e, params) => engine.call('render', await uiSettings.renderParams(params)));
 ipcMain.handle('engine:renderPreview', async (_e, params) => engine.call('renderPreview', await uiSettings.renderParams(params)));
 ipcMain.handle('engine:renderAnimation', async (_e, params) => engine.call('renderAnimation', await uiSettings.renderParams(params)));
+ipcMain.handle('exports:start',async(_event,{kind,params})=>{
+  if(!openedSchematic)throw Error('请先打开投影');
+  const source=openedSchematic;
+  return backgroundExports.submit({kind,source,params:await uiSettings.renderParams(params),resources:{...(resourceRoot?{root:resourceRoot}:{}),imports:await packStore.read()}});
+});
+ipcMain.handle('exports:list',()=>backgroundExports.list());
+ipcMain.handle('exports:cancel',(_event,id)=>backgroundExports.cancel(id));
 ipcMain.handle('engine:cancel', () => engine.call('cancel', {}));
 ipcMain.handle('engine:releaseStreaming', async () => {await sceneTransfer.close();await engine.call('cancelPreview',{});return engine.call('releaseStreaming', {});});
 ipcMain.handle('engine:materials',(_event,request)=>engine.call('materials',{waterAsIce:request?.waterAsIce===true}));
@@ -136,14 +153,22 @@ ipcMain.handle('dialog:saveMaterials',async(_event,{suggested,format,scope})=>{
 ipcMain.handle('engine:pickBlock', (_e, ray) => engine.call('pickBlock', ray));
 
 ipcMain.handle('ui:settings', () => uiSettings.settings());
+ipcMain.handle('ui:keybindings',async(_event,bindings)=>{
+  const {cleanShortcutBindings}=require('./renderer/keyboard-shortcuts');
+  const keybindings=cleanShortcutBindings(bindings);await uiSettings.save({keybindings});return {keybindings};
+});
 ipcMain.handle('ui:previewBackend', async (_event, backend) => {
   if (backend !== 'cpu' && backend !== 'gpu') throw new Error('未知的预览渲染方式。');
   await uiSettings.save({ previewBackend: backend });
   return { previewBackend: backend };
 });
 for(const key of ['largeProjection','lightingEnabled','showCoordinates','clearCacheOnExit']) {
-  ipcMain.handle('ui:'+key,async(_event,enabled)=>{await uiSettings.save({[key]:enabled===true});return {[key]:enabled===true};});
+  ipcMain.handle('ui:'+key,async(_event,enabled)=>{await uiSettings.save({[key]:enabled===true,...(key==='largeProjection'?{projectionMode:enabled?'streaming':'full'}:{})});return {[key]:enabled===true};});
 }
+ipcMain.handle('ui:projectionMode',async(_event,mode)=>{
+  if(!['auto','full','streaming'].includes(mode))throw Error('无效的加载方式');
+  await uiSettings.save({projectionMode:mode});return {projectionMode:mode};
+});
 ipcMain.handle('ui:realLighting', async (_event, enabled) => {
   await uiSettings.save({ realLighting: enabled === true });
   return { realLighting: enabled === true };
@@ -210,6 +235,13 @@ ipcMain.handle('skins:importLocal', async (_event, identity) => {
  * vertices to roughly 40 MB of text.
  */
 ipcMain.handle('engine:readSceneChunk', (event, request = {}) => sceneTransfer.read(event.sender.id, request.id, request.offset, request.length));
+ipcMain.handle('engine:readSelectionChunk',(event,request={})=>selectionTransfer.read(event.sender.id,request.id,request.offset,request.length));
+ipcMain.handle('engine:releaseSelection',()=>selectionTransfer.close());
+ipcMain.handle('engine:exportSelectionScene',async(event,options={})=>{
+  const dir=path.join(APP_HOME,'renders','.gpu','selection');await fs.promises.mkdir(dir,{recursive:true});await selectionTransfer.close();
+  const result=await engine.call('exportSelectionScene',{selection:options.selection,realLighting:options.realLighting===true,lightingEnabled:options.lightingEnabled!==false,atlas:path.join(dir,'atlas.png'),mesh:path.join(dir,'mesh.bin')});
+  return scenePayload(event,result,{transfer:selectionTransfer});
+});
 ipcMain.handle('engine:readScenePage',(event,request={})=>sceneTransfer.readPage(event.sender.id,request.id,request.page));
 ipcMain.handle('engine:beginPreview',async (_event,options={})=>{await sceneTransfer.close();return engine.call('beginPreview',options);});
 ipcMain.handle('engine:previewStatus',async(event,request)=>{
@@ -242,7 +274,7 @@ async function scenePayload(event,res,options={}) {
   diagnostic(options.growing?'progressive detail stream opened: '+res.committedBytes+' committed bytes':'scene exported: ' + meshBytes + ' bytes, ' + res.quads + ' faces');
   let payload;
   if (['LMESH5','LMESH6','LMESH7'].includes(res.meshFormat) || meshBytes > INLINE_LIMIT) {
-    payload = { meshTransfer: await sceneTransfer.open(res.mesh, event.sender.id,{...options,committedBytes:res.committedBytes}) };
+    payload = { meshTransfer: await (options.transfer||sceneTransfer).open(res.mesh, event.sender.id,{...options,committedBytes:res.committedBytes}) };
     diagnostic('using chunked scene transfer');
   } else {
     const meshBuffer = await fs.promises.readFile(res.mesh);
@@ -427,6 +459,8 @@ app.on('before-quit', event => {
   if(!shutdownPromise)shutdownPromise=(async()=>{
     try {
       await sceneTransfer.close();
+      await selectionTransfer.close();
+      await backgroundExports.close();
       if(engine)await engine.stop();
       await uiSettings.queue;
       if((await uiSettings.read()).clearCacheOnExit){await clearRenderingCache(APP_HOME);diagnostic('render cache cleared on exit');}

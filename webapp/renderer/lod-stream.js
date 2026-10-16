@@ -52,6 +52,7 @@ class LodStream {
   }
   constructor(view,manifest,read,options) {
     this.view=view;this.gl=view.gl;this.manifest=manifest;this.read=read;
+    for(const section of manifest.sections)section.costs=LodStream.costs(section.levels,view.compactGpu);
     this.readPage=options.readPage;this.decodedBytes=0;this.decodeMillis=0;this.transferPeakBytes=0;this.transferLimitBytes=80*1024*1024;
     this.budgetBytes=options.budgetBytes??256*1024*1024;
     this.checkBudget(this.budgetBytes);
@@ -70,7 +71,7 @@ class LodStream {
     this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER,indices,this.gl.STATIC_DRAW);
     this.onChange=options.onChange||(()=>{});this.onError=options.onError||(()=>{});
   }
-  static costs(levels){return levels.map(pages=>pages.length?pages.reduce((sum,p)=>sum+(p.layer===6?Math.ceil(p.rawBytes*1.05):p.quads*(p.layer===4?224:80))+1024,4096):0);}
+  static costs(levels,compact=false){return levels.map(pages=>pages.length?pages.reduce((sum,p)=>sum+(p.layer===6?Math.ceil(p.rawBytes*1.05):p.quads*(p.layer===4?224:compact&&p.layer<2&&(p.codec&2)?40:80))+1024,4096):0);}
   beginProgressive(source,total){
     if(this.disposed||this.progressive)throw Error('渐进预览状态无效');if(!Number.isSafeInteger(total)||total<0||total>200000)throw Error('渐进区块数量无效');
     this.progressive=true;this.progressComplete=false;this.totalExpected=total;this.detailSource=source;
@@ -101,7 +102,7 @@ class LodStream {
         if(section.levels[3].length)levels[3]=section.levels[3];section.levels=levels;
         section.min=section.min.map((v,i)=>Math.min(v,min[i]));section.max=section.max.map((v,i)=>Math.max(v,max[i]));
       }
-      section.fullReady=true;section.exits=exits;section.solid=solid;section.center=section.min.map((v,i)=>(v+section.max[i])/2);section.costs=LodStream.costs(section.levels);this.detailCount++;
+      section.fullReady=true;section.exits=exits;section.solid=solid;section.center=section.min.map((v,i)=>(v+section.max[i])/2);section.costs=LodStream.costs(section.levels,this.view.compactGpu);this.detailCount++;
       this.swapReserve=Math.min(this.capacity/4,Math.max(this.swapReserve,...section.costs.filter(cost=>cost<this.capacity/2)));
     }
     this.planKey=null;this.lastPlan=-Infinity;this.changed();
@@ -169,7 +170,7 @@ class LodStream {
     this.lastCamera=cam;this.lastPlanes=planes;
     const width=this.view.lodViewportWidth||this.view.canvas.width,height=this.view.lodViewportHeight||this.view.canvas.height;
     const distance=cam.orbit?null:(cam.viewDistance??6);
-    const key=JSON.stringify([cam.orbit,cam.eye,cam.target,cam.up,cam.rotationDeg,cam.slantDeg,cam.zoom,cam.fovDeg,cam.culling,cam.occlusion,cam.lodLevel,cam.lodEnabled,distance,width,height]);
+    const key=JSON.stringify([cam.orbit,cam.eye,cam.target,cam.up,cam.rotationDeg,cam.slantDeg,cam.zoom,cam.fovDeg,cam.culling,cam.occlusion,cam.lodLevel,cam.lodEnabled,cam.focus,distance,width,height]);
     const now=performance.now();if(!force&&(key===this.planKey||distance===this.lastViewDistance&&now-this.lastPlan<100))return;this.lastPlan=now;this.planKey=key;this.lastViewDistance=distance;
     const view=this.view,small=!this.progressive&&this.manifest.quads*80<8*1024*1024,eye=cam.eye||view.center;
     const candidates=[];
@@ -186,6 +187,7 @@ class LodStream {
       let level=cam.lodEnabled===false?0:Number.isInteger(cam.lodLevel)?Math.max(0,Math.min(3,cam.lodLevel)):small?0:pixels>80?0:pixels>32?1:pixels>12?2:3;
       if(section.fullReady===false)level=3;
       const old=this.wanted.get(section.id);if(cam.lodEnabled!==false&&!small&&!Number.isInteger(cam.lodLevel)&&old&&Math.abs(level-old.level)===1){const threshold=[80,32,12][Math.min(level,old.level)];if(pixels>threshold*.8&&pixels<threshold*1.2)level=old.level;}
+      if(cam.focus&&section.fullReady!==false&&section.min.every((v,i)=>v<=cam.focus.max[i]&&section.max[i]>=cam.focus.min[i]))level=0;
       candidates.push({section,desired:level,level:3,priority:distance,cost:section.costs[3]});
     }
     candidates.sort((a,b)=>a.priority-b.priority||a.section.id-b.section.id);
@@ -305,10 +307,11 @@ class LodStream {
           if(count<0||4+count*48!==wire.byteLength)throw Error('LOD 透明排序数据无效');
           resident.bsp=bsp;continue;
         }
-        if((descriptor.codec&2)!==0)wire=LodStream.expandCompact(wire,descriptor.quads,task.section.position);
+        const compactGpu=this.view.compactGpu&&descriptor.layer<2&&(descriptor.codec&2)!==0;
+        if((descriptor.codec&2)!==0){if(compactGpu)LodStream.validateCompact(wire,descriptor.quads);else wire=LodStream.expandCompact(wire,descriptor.quads,task.section.position);}
         const positions=new DataView(wire.buffer,wire.byteOffset,wire.byteLength);
-        for(let vertex=0;vertex<descriptor.quads*4;vertex++)for(let axis=0;axis<3;axis++)if(!Number.isFinite(positions.getFloat32(vertex*20+axis*4,true)))throw Error('LOD 顶点坐标无效');
-        const page={...descriptor};pages.push(page);page.vbo=gl.createBuffer();
+        if(!compactGpu)for(let vertex=0;vertex<descriptor.quads*4;vertex++)for(let axis=0;axis<3;axis++)if(!Number.isFinite(positions.getFloat32(vertex*20+axis*4,true)))throw Error('LOD 顶点坐标无效');
+        const page={...descriptor,compactGpu,position:task.section.position};pages.push(page);page.vbo=gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER,page.vbo);gl.bufferData(gl.ARRAY_BUFFER,wire,gl.STATIC_DRAW);
         if(page.layer===4) {
           page.data=wire;page.start=resident.blendCount;resident.blendCount+=page.quads;
@@ -340,6 +343,10 @@ class LodStream {
       return resident;
     }catch(error){this.destroyUninstalled(resident);throw error;}
   }
+  static validateCompact(wire,quads){
+    if(wire.byteLength!==quads*40)throw Error('紧凑几何页长度错误');
+    for(let i=0;i<quads;i++){const axis=wire[i*40+6],p=wire[i*40+7];let seen=0;for(let v=0;v<4;v++)seen|=1<<((p>>(v*2))&3);if(axis>2||seen!==15)throw Error('紧凑几何顶点无效');}
+  }
   static expandCompact(wire,quads,position) {
     if(wire.byteLength!==quads*40)throw Error('紧凑几何页长度错误');
     const input=new DataView(wire.buffer,wire.byteOffset,wire.byteLength),expanded=new Uint8Array(quads*80),output=new DataView(expanded.buffer),corners=[[0,0],[0,1],[1,1],[1,0]];
@@ -357,7 +364,17 @@ class LodStream {
   }
   bind(page) {
     if(this.view.uni.colorOnly!=null)this.gl.uniform1f(this.view.uni.colorOnly,page.proxy?1:0);
-    const gl=this.gl,a=this.view.attr;gl.bindBuffer(gl.ARRAY_BUFFER,page.vbo);
+    const gl=this.gl,a=this.view.attr;this.view.resetCompact();
+    if(page.compactGpu){
+      gl.uniform1f(this.view.uni.compact,1);gl.uniform3fv(this.view.uni.sectionOrigin,page.position.map(v=>v*16));
+      gl.disableVertexAttribArray(a.uv);gl.disableVertexAttribArray(a.color);
+      gl.bindBuffer(gl.ARRAY_BUFFER,this.view.compactCorners);gl.enableVertexAttribArray(a.pos);gl.vertexAttribPointer(a.pos,1,gl.FLOAT,false,4,0);
+      gl.bindBuffer(gl.ARRAY_BUFFER,page.vbo);
+      const bind=(attr,size,type,offset)=>{gl.enableVertexAttribArray(attr);gl.vertexAttribPointer(attr,size,type,false,40,offset);this.view.instancing.vertexAttribDivisorANGLE(attr,1);};
+      bind(a.compactOrigin,3,gl.SHORT,0);bind(a.compactCode,2,gl.UNSIGNED_BYTE,6);
+      a.tiles.forEach((attr,i)=>bind(attr,4,gl.UNSIGNED_SHORT,8+i*8));return;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER,page.vbo);
     gl.enableVertexAttribArray(a.pos);gl.vertexAttribPointer(a.pos,3,gl.FLOAT,false,20,0);
     gl.enableVertexAttribArray(a.uv);gl.vertexAttribPointer(a.uv,2,gl.UNSIGNED_SHORT,true,20,12);
     gl.enableVertexAttribArray(a.color);gl.vertexAttribPointer(a.color,3,gl.UNSIGNED_BYTE,true,20,16);
@@ -406,10 +423,13 @@ class LodStream {
     this.plan(cam,planes);const gl=this.gl,view=this.view,visible=new Set();
     for(const resident of this.residents.values())if(this.visible(resident.section,planes,cam))visible.add(resident.id);
     let quads=0,calls=0;
+    for(const focusPass of cam.focusPasses||(cam.focus?[1,2]:[0])){
+    gl.uniform1f(view.uni.focusPass,focusPass);
     for(const layer of [0,1,5]) {
-      gl.disable(gl.BLEND);gl.depthMask(true);gl.colorMask(layer!==5,layer!==5,layer!==5,layer!==5);gl.uniform1f(view.uni.alphaCutoff,layer===1?.1:0);
+      if(focusPass===2&&layer===5)continue;
+      if(focusPass===2)gl.enable(gl.BLEND);else gl.disable(gl.BLEND);gl.depthMask(focusPass!==2);gl.colorMask(layer!==5,layer!==5,layer!==5,layer!==5);gl.uniform1f(view.uni.alphaCutoff,layer===1?.1:0);
       for(const id of visible)for(const page of this.residents.get(id).pages)if(page.layer===layer) {
-        this.bind(page);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.sharedIndex);gl.drawElements(gl.TRIANGLES,page.quads*6,gl.UNSIGNED_SHORT,0);quads+=page.quads;calls++;
+        this.bind(page);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,this.sharedIndex);if(page.compactGpu)view.instancing.drawElementsInstancedANGLE(gl.TRIANGLES,6,gl.UNSIGNED_SHORT,0,page.quads);else gl.drawElements(gl.TRIANGLES,page.quads*6,gl.UNSIGNED_SHORT,0);quads+=page.quads;calls++;
       }
     }
     gl.enable(gl.BLEND);gl.depthMask(false);gl.colorMask(true,true,true,true);gl.uniform1f(view.uni.alphaCutoff,0);
@@ -423,7 +443,9 @@ class LodStream {
       const high=eye?eye[node.axis]>=node.plane:-dir[node.axis]>=0;
       visit(high?node.left:node.right);visit(high?node.right:node.left);
     };
-    visit(this.tree);gl.depthMask(true);gl.colorMask(true,true,true,true);
+    visit(this.tree);
+    }
+    view.resetCompact();gl.depthMask(true);gl.colorMask(true,true,true,true);
     view.drawStats={totalQuads:this.manifest.quads,visibleQuads:quads,visibleChunks:visible.size,totalChunks:this.manifest.sections.length,drawCalls:calls,...this.stats()};
   }
   stats(){const job=this.preloadJob;return {residentBytes:this.residentBytes,loadingBytes:this.loadingBytes,budgetBytes:this.budgetBytes,peakBytes:this.peakBytes,residentSections:this.residents.size,requestedSections:this.wanted.size,overviewResident:this.keepOverview,loads:this.loads,cacheHits:this.cacheHits,cachedLevels:this.cache.size,evictions:this.evictions,lodChanges:this.lodChanges,bytesRead:this.bytesRead,decodedBytes:this.decodedBytes,decodeMillis:this.decodeMillis,transferPeakBytes:this.transferPeakBytes,transferLimitBytes:this.transferLimitBytes,cpuPageCacheBytes:0,indexBytes:this.manifest.indexBytes,budgetLimited:this.budgetLimited||0,lodCounts:this.lodCounts.slice(),running:this.running===true,progressive:this.progressive===true,progressComplete:this.progressComplete===true,publishedSections:this.detailCount,totalExpected:this.totalExpected,detailResidents:this.lodCounts[0]+this.lodCounts[1]+this.lodCounts[2],preload:job?{scope:job.scope,status:job.status,prepared:job.prepared.size,total:job.sections.length}:null};}
