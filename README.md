@@ -2,9 +2,7 @@
 
 不用启动 Minecraft，就能打开 `.litematic` 投影，旋转预览、进入建筑内部查看、统计材料，并导出 PNG 图片或旋转 GIF。
 
-**当前源码版本：1.1.01 · Windows 10 / 11，64 位**
-
-GitHub 最新便携发布版为 1.0.17.15；本次源码更新包含光照、资源缓存与大投影载入优化。
+**当前版本：1.1.0.2 · Windows 10 / 11，64 位**
 
 [下载 Windows 便携版](https://github.com/wocenimenma0220/Standalone-Litematic-Renderer/releases/latest) · [更新记录](评估与测评/CHANGELOG.md) · [开发与命令行说明](docs/DEVELOPMENT.md)
 
