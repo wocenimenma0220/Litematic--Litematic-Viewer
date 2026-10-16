@@ -15,10 +15,14 @@ public final class PackedLongArray {
     public static final int PAGE_WORDS = 4096;
     private static final int PAGE_BYTES = PAGE_WORDS * Long.BYTES;
     // Keys own only their page payload, never a schematic. Old schematics can be collected.
-    private static final ThreadLocal<LinkedHashMap<Page,long[]>> DECODED = ThreadLocal.withInitial(
-        () -> new LinkedHashMap<>(64, .75f, true) {
-            @Override protected boolean removeEldestEntry(java.util.Map.Entry<Page,long[]> entry) { return size() > 64; }
-        });
+    private static final class DecodedPages extends LinkedHashMap<Page,long[]> {
+        Page lastPage;
+        long[] lastWords;
+        DecodedPages(){super(64,.75f,true);}
+        @Override protected boolean removeEldestEntry(java.util.Map.Entry<Page,long[]> entry){return size()>64;}
+        long[] remember(Page page,long[] words){lastPage=page;lastWords=words;return words;}
+    }
+    private static final ThreadLocal<DecodedPages> DECODED=ThreadLocal.withInitial(DecodedPages::new);
     private static final class Page {
         final long uniform;
         final byte[] data;
@@ -28,7 +32,8 @@ public final class PackedLongArray {
             this.uniform=uniform;this.data=data;this.compressed=compressed;this.words=words;
         }
         long[] decode() {
-            var cache=DECODED.get();long[] found=cache.get(this);if(found!=null)return found;
+            var cache=DECODED.get();if(cache.lastPage==this)return cache.lastWords;
+            long[] found=cache.get(this);if(found!=null)return cache.remember(this,found);
             byte[] raw=data;
             if(compressed) {
                 raw=new byte[words*8];var inflater=new Inflater();
@@ -38,7 +43,7 @@ public final class PackedLongArray {
                     if(!inflater.finished()||inflater.getRemaining()!=0)throw new IllegalStateException("方块数据页长度不符");
                 }catch(DataFormatException e){throw new IllegalStateException("方块数据页损坏",e);}finally{inflater.end();}
             }
-            long[] result=new long[words];ByteBuffer.wrap(raw).asLongBuffer().get(result);cache.put(this,result);return result;
+            long[] result=new long[words];ByteBuffer.wrap(raw).asLongBuffer().get(result);cache.put(this,result);return cache.remember(this,result);
         }
     }
     private final int length;

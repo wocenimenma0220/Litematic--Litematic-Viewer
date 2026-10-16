@@ -281,7 +281,8 @@ public final class BlockRegistry {
 
     /** Actual skull block entities, excluding ordinary models such as piston_head. */
     public static boolean isHead(String blockId) {
-        return HEADED_BLOCKS.contains(blockId.replace("_wall_", "_"));
+        return (blockId.endsWith("_head")||blockId.endsWith("_skull"))
+            && HEADED_BLOCKS.contains(blockId.replace("_wall_", "_"));
     }
 
     @SuppressWarnings("unchecked")

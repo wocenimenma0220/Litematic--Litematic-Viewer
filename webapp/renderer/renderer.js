@@ -429,6 +429,7 @@ async function applyGpuScene(res,options={}) {
           overview:res.overview===true,coarseOverview:res.coarseOverview===true,
           budgetBytes:state.geometryBudgetMB*1048576,
           readPage:page=>window.engine.readScenePage(page.source||res.meshTransfer.id,page),
+          readPages:pages=>window.engine.readScenePages(pages[0].source||res.meshTransfer.id,pages),
           isCurrent,
           onChange:stats=>{
             if(!isCurrent()||!state.view?.stream||state.cpuPreview)return;
@@ -1157,6 +1158,9 @@ async function loadFile(file) {
   els.zoom.value = '1';
   syncAngleLabels();
   try {
+    await window.__resourcesReady;
+    if(!state.resourcesLoaded)throw Error('资源初始化未完成，请检查启动日志。');
+    if(opening!==fileOpenGeneration)return;
     const info = await window.engine.open(file);
     if(opening!==fileOpenGeneration)return;
     state.file = file;
@@ -1444,6 +1448,7 @@ function escapeHtml(s) {
 // -------------------------------------------------------- resource packs
 
 function applyResourceList(res) {
+  state.resourcesLoaded=true;
   window.__builtinPacks = res.builtinPacks || [];
   renderPackList();
 }
@@ -1594,6 +1599,8 @@ window.engine.onExit((info) => {
   updateButtons();
 });
 
+let finishResourceInitialization;
+window.__resourcesReady=new Promise(resolve=>{finishResourceInitialization=resolve;});
 (async function init() {
   els.bg.disabled = els.transparent.checked;
   syncAngleLabels();
@@ -1612,6 +1619,7 @@ window.engine.onExit((info) => {
     state.packs = await window.packs.list();
     const res = await window.engine.loadResources(null);
     applyResourceList(res);
+    finishResourceInitialization(true);
     if (res.builtinPacks && res.builtinPacks.length) {
       log(`内置材质包：${res.builtinPacks.join('，')}`, 'ok');
     }
@@ -1623,6 +1631,8 @@ window.engine.onExit((info) => {
   } catch (err) {
     setStatus('引擎初始化失败', 'err');
     log('初始化失败：' + err.message, 'err');
+  } finally {
+    finishResourceInitialization(false);
   }
 })();
 

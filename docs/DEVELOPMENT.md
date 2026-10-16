@@ -84,6 +84,14 @@ Java 堆上限默认根据机器总内存与启动时可用内存选择。可通
 
 界面测试入口为 `tools/verify/RunHiddenElectron.ps1`，可通过 `-Script` 选择脚本。部分验证需要先生成对应投影夹具，具体依赖见脚本；验证产物留在忽略的输出目录中。
 
+大投影可用 `LargeOpenBenchmark.java` 分阶段测量。`-Dlitematicrender.mesh.workers=1` 强制串行，默认依据 CPU / 可用堆最多四个区块工作线程。`large-open-ui.cjs` 的参数依次为 `baseline` / `current`、输出标签和可选基线类目录；脚本使用独立设置与缓存。并行边界、字节一致性和取消测试见 `ParallelMeshRegression.java`，索引兼容及损坏检查见 `MeshIndexRegression.java`。
+
+`LITEMATIC_RENDER_TEST_HEAP_MB=7936` 可让 `large-open-ui.cjs` 覆盖大内存分支。测试必须验证生成期间近景、缓存近景和关闭 LOD 后存在真实材质的 LOD0 区块，不能仅凭远景总览、完整场景计数或无错误日志判定成功。大型分块光照的算法选择同时受固定工作量和内存预算约束，不能只在受限堆下测量。
+
+资源加载返回 `timings` 与 `imageCacheHit`。`-Dlitematicrender.resources.cache=false` 禁用基础图片缓存；`-Dlitematicrender.resources.cache.directory=...` 可指定软件目录内的隔离缓存，`ResourceImageCacheRegression.java` 覆盖完整动画像素和资源失效。缓存格式或读取语义变化时更新 `resource-images-v1`，引擎内容变化也会使缓存失效。保留退出清理开关的原有语义。
+
+`warm-open-ui.cjs` 在真实界面按逐页 / 批次 / 逐页 / 批次交错测试，比较像素及近景几何；`batch-transfer-regression.cjs` 覆盖 CRC、归属、关闭与受损未来页隔离。批次最多 128 页 / 2 MiB，CPU 页数据只在正在执行的上传期间暂存，不能扩展为无预算的常驻缓存。`window.__resourcesReady` 用于启动时资源初始化与打开投影的先后顺序。
+
 发布前同步 `package.ps1`、`webapp/package.json`、`webapp/package-lock.json`、`tools/launcher/Launcher.cs` 中的版本，并更新 README 和更新记录。文档修改不需要重编译程序或改写已发布的版本标签。
 
 渲染和大投影技术细节见 [LOD_STREAMING.md](../评估与测评/LOD_STREAMING.md)、[RESEARCH_NOTES.md](../评估与测评/RESEARCH_NOTES.md) 和 [综合评估](../评估与测评/投影渲染与区块缓存综合评估.md)。

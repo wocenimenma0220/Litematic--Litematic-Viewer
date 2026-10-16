@@ -243,6 +243,7 @@ ipcMain.handle('engine:exportSelectionScene',async(event,options={})=>{
   return scenePayload(event,result,{transfer:selectionTransfer});
 });
 ipcMain.handle('engine:readScenePage',(event,request={})=>sceneTransfer.readPage(event.sender.id,request.id,request.page));
+ipcMain.handle('engine:readScenePages',(event,request={})=>sceneTransfer.readPages(event.sender.id,request.id,request.pages));
 ipcMain.handle('engine:beginPreview',async (_event,options={})=>{await sceneTransfer.close();return engine.call('beginPreview',options);});
 ipcMain.handle('engine:previewStatus',async(event,request)=>{
   const query=typeof request==='string'?{id:request}:request;

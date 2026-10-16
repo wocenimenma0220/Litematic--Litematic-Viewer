@@ -240,9 +240,12 @@ public final class RenderEngine implements AutoCloseable {
      * @param imports  user pack paths (zip or folder) in priority order, highest last
      */
     public synchronized Map<String, Object> loadResources(Path packRoot, List<String> imports) throws Exception {
+        long resourceStart=System.nanoTime(),resourceStep=resourceStart;
+        Map<String,Object> timings=new LinkedHashMap<>();
         List<Path> builtin = builtinPacks();
         List<Path> user = imports == null ? List.of() : imports.stream().map(Path::of).toList();
         String fingerprint=CacheFingerprint.resources(packRoot,builtin,user);
+        timings.put("fingerprintMillis",(System.nanoTime()-resourceStep)/1e6);resourceStep=System.nanoTime();
         boolean same = this.resources != null && packRoot.equals(this.loadedPackRoot)
             && builtin.equals(this.loadedBuiltins) && user.equals(this.loadedUserPacks)&&fingerprint.equals(this.loadedResourceFingerprint);
         if (same) {
@@ -254,6 +257,7 @@ public final class RenderEngine implements AutoCloseable {
             hit.put("builtinPacks", this.loadedBuiltinNames);
             hit.put("importedPacks", this.loadedUserPackNames);
             hit.put("cached", true);
+            hit.put("timings",timings);
             return hit;
         }
         closeResources();
@@ -272,10 +276,14 @@ public final class RenderEngine implements AutoCloseable {
             res.importPackUnchecked(p);
             userNames.add(p.getFileName().toString());
         }
+        timings.put("packMillis",(System.nanoTime()-resourceStep)/1e6);resourceStep=System.nanoTime();
         BlockRegistry reg = BlockRegistry.load(res);
-        Colormaps cm = new Colormaps();
-        cm.load(res);
-        SpriteAtlas at = SpriteAtlas.load(res, "blocks");
+        timings.put("registryMillis",(System.nanoTime()-resourceStep)/1e6);resourceStep=System.nanoTime();
+        if(rendererFingerprint==null)rendererFingerprint=CacheFingerprint.tree(home.resolve("bin"));
+        String imageKey=CacheFingerprint.parts("resource-images-v1",rendererFingerprint,fingerprint);
+        var images=io.github.litematicrender.render.ResourceImageCache.load(home,imageKey,res);
+        Colormaps cm=images.colors();SpriteAtlas at=images.atlas();
+        timings.put("imageMillis",(System.nanoTime()-resourceStep)/1e6);
         this.resources = res;
         this.registry = reg;
         this.colormaps = cm;
@@ -299,6 +307,8 @@ public final class RenderEngine implements AutoCloseable {
         out.put("builtinPacks", builtinNames);
         out.put("importedPacks", userNames);
         out.put("cached", false);
+        out.put("imageCacheHit",images.hit());
+        timings.put("totalMillis",(System.nanoTime()-resourceStart)/1e6);out.put("timings",timings);
         return out;
     }
 

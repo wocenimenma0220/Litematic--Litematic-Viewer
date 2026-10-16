@@ -18,7 +18,7 @@ final class CacheFingerprint {
         if(!Files.exists(root))return "absent";
         if(!Files.isDirectory(root))return file(root);
         var digest=digest();List<Path> files;
-        try(var paths=Files.walk(root)){files=paths.filter(Files::isRegularFile).sorted(Comparator.comparing(p->root.relativize(p).toString().replace('\\','/'))).toList();}
+        try(var paths=Files.find(root,Integer.MAX_VALUE,(path,attributes)->attributes.isRegularFile()||attributes.isSymbolicLink()&&Files.isRegularFile(path))){files=paths.sorted(Comparator.comparing(p->root.relativize(p).toString().replace('\\','/'))).toList();}
         for(Path path:files){digest.update(root.relativize(path).toString().replace('\\','/').getBytes(StandardCharsets.UTF_8));digest.update((byte)0);digest.update(file(path).getBytes(StandardCharsets.US_ASCII));}
         return hex(digest);
     }

@@ -74,7 +74,7 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     /** Read a resource; returns null when absent in this pack. */
-    public byte[] read(String namespace, String path) {
+    public synchronized byte[] read(String namespace, String path) {
         if (this.closed) return null;
         String key = namespace + ":" + path;
         byte[] cached = this.cache.get(key);
@@ -134,7 +134,7 @@ public final class ResourcePack implements AutoCloseable {
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
         this.closed = true;
         this.cache.clear();
         try {
@@ -151,6 +151,7 @@ public final class ResourcePack implements AutoCloseable {
 
     private static final class DirSource implements PackSource {
         private final Path root;
+        private List<String> assetEntries;
 
         DirSource(Path root) { this.root = root; }
 
@@ -167,20 +168,26 @@ public final class ResourcePack implements AutoCloseable {
 
         @Override
         public List<String> listEntries(String prefix) {
+            // Resource packs are session snapshots. Reloading creates a fresh source after
+            // content fingerprint validation, including additions and same-metadata edits.
+            if(assetEntries!=null&&prefix.equals("assets/"))return assetEntries;
             List<String> result = new ArrayList<>();
             Path base = this.root.resolve(prefix);
             if (!Files.isDirectory(base)) return result;
-            try (var stream = Files.walk(base)) {
-                stream.filter(Files::isRegularFile).forEach(file -> {
+            // Files.find reuses traversal attributes; a second stat per file is costly on Windows.
+            try (var stream = Files.find(base, Integer.MAX_VALUE, (file, attributes) -> attributes.isRegularFile()
+                    || attributes.isSymbolicLink() && Files.isRegularFile(file))) {
+                stream.forEach(file -> {
                     String rel = this.root.relativize(file).toString().replace('\\', '/');
                     result.add(rel);
                 });
             } catch (IOException ignored) {}
+            if(prefix.equals("assets/"))assetEntries=List.copyOf(result);
             return result;
         }
 
         @Override
-        public void close() {}
+        public void close() {assetEntries=null;}
     }
 
     private static final class ZipSource implements PackSource {

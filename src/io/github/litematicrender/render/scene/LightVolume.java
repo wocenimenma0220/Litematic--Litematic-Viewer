@@ -134,13 +134,16 @@ public final class LightVolume implements LightSampler {
     /** 1.0.10 direct sky: roofs block columns; water and leaves absorb light. */
     private void seedRealLight() {
         sky.fill(15);
-        for (int z=0;z<sz;z++) for (int x=0;x<sx;x++) {
-            if(x==0&&Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException();
-            int level=15;
-            for (int y=sy-1;y>=0;y--) {
+        byte[] columns=new byte[sx*sz];java.util.Arrays.fill(columns,(byte)15);
+        // Keep packed block reads contiguous within each Y plane. Scanning a tall column
+        // first can evict every decoded page before the next adjacent column reuses it.
+        for (int y=sy-1;y>=0;y--) for (int z=0;z<sz;z++) {
+            if(Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException();
+            for (int x=0;x<sx;x++) {
                 BlockState state=at(x,y,z);
                 int opacity=skyOpacity(state,shapes);
-                level=Math.max(0,level-(opacity==0 && level==15?0:Math.max(1,opacity)));
+                int column=z*sx+x,level=columns[column];
+                level=Math.max(0,level-(opacity==0 && level==15?0:Math.max(1,opacity)));columns[column]=(byte)level;
                 int index=idx(x,y,z);sky.set(index,shapes.lightPermeable(state)?level:0);
                 int emission=realEmission(state);if(emission>0){block.set(index,emission);maxEmission=Math.max(maxEmission,emission);}
             }

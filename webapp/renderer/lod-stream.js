@@ -54,6 +54,7 @@ class LodStream {
     this.view=view;this.gl=view.gl;this.manifest=manifest;this.read=read;
     for(const section of manifest.sections)section.costs=LodStream.costs(section.levels,view.compactGpu);
     this.readPage=options.readPage;this.decodedBytes=0;this.decodeMillis=0;this.transferPeakBytes=0;this.transferLimitBytes=80*1024*1024;
+    this.readPages=options.readPages;this.pageBatch=new Map();this.batchBytes=0;this.batchPeakBytes=0;this.pageRequests=0;this.batchRequests=0;
     this.budgetBytes=options.budgetBytes??256*1024*1024;
     this.checkBudget(this.budgetBytes);
     this.scratchBytes=16*1024*1024+2*8192*80;this.residentBytes=0;this.loadingBytes=0;this.peakBytes=0;this.bytesRead=0;
@@ -290,7 +291,36 @@ class LodStream {
         }finally{this.loadingBytes=0;}
         await yieldToUi();
       }
-    }finally{this.running=false;if(!this.disposed)this.onChange(this.stats());}
+    }finally{this.pageBatch.clear();this.batchBytes=0;this.running=false;if(!this.disposed)this.onChange(this.stats());}
+  }
+  accountPacket(packet){this.bytesRead+=packet.storedBytes;this.decodedBytes+=packet.decodedBytes;this.decodeMillis+=packet.decodeMillis;this.transferPeakBytes=Math.max(this.transferPeakBytes,packet.peakScratchBytes);this.transferLimitBytes=packet.scratchLimitBytes;}
+  async readPacket(descriptor,current){
+    let packet=this.pageBatch.get(descriptor);
+    if(packet){this.pageBatch.delete(descriptor);this.batchBytes-=packet.data.byteLength;return packet;}
+    this.pageBatch.clear();this.batchBytes=0;
+    if(!this.readPages||descriptor.rawBytes>2*1024*1024){this.pageRequests++;packet=await this.readPage(descriptor);this.accountPacket(packet);return packet;}
+    const pages=[descriptor],seen=new Set(pages);let raw=descriptor.rawBytes;
+    collect:for(const task of [current,...this.queue.slice(this.queueAt,this.queueAt+256)]){
+      if(!this.valid(task)||this.ready(task))continue;
+      const levelPages=task.section.levels[task.level];
+      for(let i=task===current?levelPages.indexOf(descriptor)+1:0;i<levelPages.length;i++){
+        const page=levelPages[i];
+        if(seen.has(page)||page.source!==descriptor.source)continue;
+        if(pages.length>=128||raw+page.rawBytes>2*1024*1024)break collect;
+        seen.add(page);pages.push(page);raw+=page.rawBytes;
+      }
+    }
+    this.batchRequests++;let packets;
+    try{packets=await this.readPages(pages);}catch(error){
+      // A damaged future page must not mark the current, valid section as failed.
+      this.pageRequests++;packet=await this.readPage(descriptor);this.accountPacket(packet);return packet;
+    }
+    if(!Array.isArray(packets)||packets.length!==pages.length)throw Error('模型页批次不完整');
+    for(let i=0;i<pages.length;i++){
+      const p=packets[i];if(p.data.byteLength!==pages[i].rawBytes)throw Error('解压页长度错误');this.accountPacket(p);
+      if(i){this.pageBatch.set(pages[i],p);this.batchBytes+=p.data.byteLength;}
+    }
+    this.batchPeakBytes=Math.max(this.batchPeakBytes,this.batchBytes);return packets[0];
   }
   destroyUninstalled(resident){if(resident)for(const page of resident.pages){if(page.vbo)this.gl.deleteBuffer(page.vbo);if(page.ibo)this.gl.deleteBuffer(page.ibo);}}
   async load(task) {
@@ -299,7 +329,7 @@ class LodStream {
       for(const descriptor of task.section.levels[task.level]) {
         if(!this.valid(task))throw Error('LOD 请求已更新');
         let wire;
-        if(this.manifest.compressed){const packet=await this.readPage(descriptor);wire=new Uint8Array(packet.data);if(wire.byteLength!==descriptor.rawBytes)throw Error('解压页长度错误');this.bytesRead+=packet.storedBytes;this.decodedBytes+=packet.decodedBytes;this.decodeMillis+=packet.decodeMillis;this.transferPeakBytes=packet.peakScratchBytes;this.transferLimitBytes=packet.scratchLimitBytes;}
+        if(this.manifest.compressed){const packet=await this.readPacket(descriptor,task);wire=new Uint8Array(packet.data);if(wire.byteLength!==descriptor.rawBytes)throw Error('解压页长度错误');}
         else {wire=await this.read(descriptor.offset,descriptor.bytes);this.bytesRead+=wire.byteLength;this.decodedBytes+=wire.byteLength;}
         if(!this.valid(task))throw Error('LOD 请求已更新');
         if(descriptor.layer===6) {
@@ -448,12 +478,12 @@ class LodStream {
     view.resetCompact();gl.depthMask(true);gl.colorMask(true,true,true,true);
     view.drawStats={totalQuads:this.manifest.quads,visibleQuads:quads,visibleChunks:visible.size,totalChunks:this.manifest.sections.length,drawCalls:calls,...this.stats()};
   }
-  stats(){const job=this.preloadJob;return {residentBytes:this.residentBytes,loadingBytes:this.loadingBytes,budgetBytes:this.budgetBytes,peakBytes:this.peakBytes,residentSections:this.residents.size,requestedSections:this.wanted.size,overviewResident:this.keepOverview,loads:this.loads,cacheHits:this.cacheHits,cachedLevels:this.cache.size,evictions:this.evictions,lodChanges:this.lodChanges,bytesRead:this.bytesRead,decodedBytes:this.decodedBytes,decodeMillis:this.decodeMillis,transferPeakBytes:this.transferPeakBytes,transferLimitBytes:this.transferLimitBytes,cpuPageCacheBytes:0,indexBytes:this.manifest.indexBytes,budgetLimited:this.budgetLimited||0,lodCounts:this.lodCounts.slice(),running:this.running===true,progressive:this.progressive===true,progressComplete:this.progressComplete===true,publishedSections:this.detailCount,totalExpected:this.totalExpected,detailResidents:this.lodCounts[0]+this.lodCounts[1]+this.lodCounts[2],preload:job?{scope:job.scope,status:job.status,prepared:job.prepared.size,total:job.sections.length}:null};}
+  stats(){const job=this.preloadJob;return {residentBytes:this.residentBytes,loadingBytes:this.loadingBytes,budgetBytes:this.budgetBytes,peakBytes:this.peakBytes,residentSections:this.residents.size,requestedSections:this.wanted.size,overviewResident:this.keepOverview,loads:this.loads,cacheHits:this.cacheHits,cachedLevels:this.cache.size,evictions:this.evictions,lodChanges:this.lodChanges,bytesRead:this.bytesRead,decodedBytes:this.decodedBytes,decodeMillis:this.decodeMillis,transferPeakBytes:this.transferPeakBytes,transferLimitBytes:this.transferLimitBytes,cpuPageCacheBytes:0,batchBytes:this.batchBytes,batchPeakBytes:this.batchPeakBytes,pageRequests:this.pageRequests,batchRequests:this.batchRequests,indexBytes:this.manifest.indexBytes,budgetLimited:this.budgetLimited||0,lodCounts:this.lodCounts.slice(),running:this.running===true,progressive:this.progressive===true,progressComplete:this.progressComplete===true,publishedSections:this.detailCount,totalExpected:this.totalExpected,detailResidents:this.lodCounts[0]+this.lodCounts[1]+this.lodCounts[2],preload:job?{scope:job.scope,status:job.status,prepared:job.prepared.size,total:job.sections.length}:null};}
   async settled(timeout=60000) {
     const end=performance.now()+timeout;
     while(this.running||[...this.wanted.values()].some(t=>!this.failed.has(t.section.id+':'+t.level)&&this.residents.get(t.section.id)?.level!==t.level)) {
       if(this.disposed)return;if(performance.now()>end)throw Error('LOD 载入超时');await new Promise(r=>setTimeout(r,20));
     }
   }
-  dispose(){this.disposed=true;this.wanted.clear();for(const id of this.residents.keys())this.remove(id);for(const resident of this.cache.values())this.drop(resident);this.cache.clear();this.gl.deleteBuffer(this.sharedIndex);}
+  dispose(){this.disposed=true;this.pageBatch.clear();this.batchBytes=0;this.wanted.clear();for(const id of this.residents.keys())this.remove(id);for(const resident of this.cache.values())this.drop(resident);this.cache.clear();this.gl.deleteBuffer(this.sharedIndex);}
 }

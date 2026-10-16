@@ -108,7 +108,14 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     }
 
     /** World-space block lookup: outside = air (vanilla "air outside the schematic" semantics). */
+    private BlockState[] sectionBlocks;
+    private boolean sectionBlocksReady;
+    private int sectionBlockX,sectionBlockY,sectionBlockZ;
     public BlockState blockAt(int x, int y, int z) {
+        if(sectionBlocksReady){int dx=x-sectionBlockX,dy=y-sectionBlockY,dz=z-sectionBlockZ;if(dx>=0&&dy>=0&&dz>=0&&dx<18&&dy<18&&dz<18)return sectionBlocks[(dy*18+dz)*18+dx];}
+        return lookupBlock(x,y,z);
+    }
+    private BlockState lookupBlock(int x,int y,int z) {
         if(selectionMin!=null&&!selectionContains(x,y,z))return BlockState.air();
         var candidates=this.regionIndex==null?null:this.regionIndex.get(new Section(Math.floorDiv(x,16),Math.floorDiv(y,16),Math.floorDiv(z,16)));
         if(this.regionIndex!=null && candidates==null)return BlockState.air();
@@ -123,6 +130,16 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
             }
         }
         return BlockState.air();
+    }
+    /** A bounded halo avoids repeatedly decoding packed pages for AO, fluids and neighbour faces. */
+    private void cacheSectionBlocks(SectionVisibility.Position key) {
+        sectionBlocksReady=false;
+        long x=(long)key.x()*16-1,y=(long)key.y()*16-1,z=(long)key.z()*16-1;
+        if(x<Integer.MIN_VALUE||y<Integer.MIN_VALUE||z<Integer.MIN_VALUE||x>Integer.MAX_VALUE-17||y>Integer.MAX_VALUE-17||z>Integer.MAX_VALUE-17)return;
+        sectionBlockX=(int)x;sectionBlockY=(int)y;sectionBlockZ=(int)z;
+        if(sectionBlocks==null)sectionBlocks=new BlockState[18*18*18];
+        for(int dy=0;dy<18;dy++)for(int dz=0;dz<18;dz++)for(int dx=0;dx<18;dx++)sectionBlocks[(dy*18+dz)*18+dx]=lookupBlock(sectionBlockX+dx,sectionBlockY+dy,sectionBlockZ+dz);
+        sectionBlocksReady=true;
     }
 
     // ------------------------------------------------------------------
@@ -199,6 +216,23 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
         return new SectionVisibility.Position((int)Math.floor(x/16),(int)Math.floor(y/16),(int)Math.floor(z/16));
     }
     @Override public int buildUnitSections(){return Integer.getInteger("litematicrender.mesh.buildUnit",16)>=32?2:1;}
+    @Override public int sectionWorkers() {
+        if(buildUnitSections()>1)return 1;
+        int requested=Integer.getInteger("litematicrender.mesh.workers",Math.min(4,Math.max(1,Runtime.getRuntime().availableProcessors()-1)));
+        long available=Runtime.getRuntime().maxMemory()-(Runtime.getRuntime().totalMemory()-Runtime.getRuntime().freeMemory());
+        int memoryLimit=(int)Math.max(1,(available-128L*1024*1024)/(128L*1024*1024));
+        return Math.max(1,Math.min(Math.min(4,requested),memoryLimit));
+    }
+    @Override public SceneBuilder forkForSections() {
+        if(!prepared||!streaming)throw new IllegalStateException("Complete lighting and atlas preparation before forking");
+        var worker=new SceneBuilder(registry,baker.fork(),colormaps,atlas).realLighting(realLighting).lightingEnabled(lightingEnabled);
+        worker.regions.addAll(regions);worker.regionOffsets.addAll(regionOffsets);worker.regionIndex=regionIndex;
+        worker.entitySections.addAll(entitySections);worker.occupiedSections=occupiedSections;
+        worker.skins=skins;worker.font=font;worker.generatedSprites.putAll(generatedSprites);worker.redstoneSurfaces.putAll(redstoneSurfaces);
+        worker.light=light;worker.lightOrigin=lightOrigin;worker.overview=overview;
+        if(light!=null)worker.smoothLighting=new SmoothLighting(light,lightOrigin,worker::blockAt,worker.shapes);
+        worker.streaming=true;worker.prepared=true;return worker;
+    }
     /** Occupied ownership sections, without materializing any face arrays. */
     private java.util.List<SectionVisibility.Position> occupiedSections;
     private final java.util.Set<SectionVisibility.Position> spriteSections=new java.util.HashSet<>();
@@ -233,9 +267,11 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     public SceneMesh buildSection(SectionVisibility.Position key) {
         if(Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException("模型生成已取消");
         prepare();range=key;rangeSize=16;
-        if(light!=null){sectionLight=light.forSection(key.x()*16-lightOrigin[0],key.y()*16-lightOrigin[1],key.z()*16-lightOrigin[2]);if(smoothLighting!=null)smoothLighting.bind(sectionLight);}
-        lightCacheReady=false;
-        try{return assemble();}finally{range=null;rangeSize=16;sectionLight=null;if(smoothLighting!=null)smoothLighting.bind(light);}
+        try {
+            cacheSectionBlocks(key);
+            if(light!=null){sectionLight=light.forSection(key.x()*16-lightOrigin[0],key.y()*16-lightOrigin[1],key.z()*16-lightOrigin[2]);if(smoothLighting!=null)smoothLighting.bind(sectionLight);}
+            lightCacheReady=false;return assemble();
+        }finally{range=null;rangeSize=16;sectionBlocksReady=false;sectionLight=null;if(smoothLighting!=null)smoothLighting.bind(light);}
     }
     @Override public java.util.Map<SectionVisibility.Position,SceneMesh> buildSections(java.util.List<SectionVisibility.Position> positions) {
         if(positions.size()<2||buildUnitSections()<2)return io.github.litematicrender.render.StreamMeshExporter.Source.super.buildSections(positions);
@@ -275,7 +311,8 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
         int[] max=selectionMax!=null?selectionMax:new int[]{min[0]+rangeSize,min[1]+rangeSize,min[2]+rangeSize};
         int x0=Math.max(0,min[0]-off[0]),y0=Math.max(0,min[1]-off[1]),z0=Math.max(0,min[2]-off[2]);
         int x1=Math.min(region.blocks.sizeX,max[0]-off[0]),y1=Math.min(region.blocks.sizeY,max[1]-off[1]),z1=Math.min(region.blocks.sizeZ,max[2]-off[2]);
-        for(int y=y0;y<y1;y++)for(int z=z0;z<z1;z++)for(int x=x0;x<x1;x++){var state=region.blocks.get(x,y,z);if(!state.isAir())consumer.accept(x,y,z,state);}
+        boolean cached=sectionBlocksReady&&regions.size()==1;
+        for(int y=y0;y<y1;y++)for(int z=z0;z<z1;z++)for(int x=x0;x<x1;x++){var state=cached?blockAt(x+off[0],y+off[1],z+off[2]):region.blocks.get(x,y,z);if(!state.isAir())consumer.accept(x,y,z,state);}
     }
     private SceneMesh assemble() {return assemble(true);}
     private SceneMesh assemble(boolean finishGeometry) {
@@ -380,6 +417,9 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
             throw new IllegalArgumentException("投影坐标跨度超出支持范围，请缩小区域坐标。");
         this.lightOrigin=new int[]{minX,minY,minZ};
         boolean sparse=Boolean.getBoolean("litematicrender.light.sparse");
+        // A larger heap must not select a full-volume scan of a huge bit-packed schematic.
+        // Bound the dense streaming workload independently of the machine's available memory.
+        if(streaming&&(double)spanX*spanY*spanZ>16L*1024*1024)sparse=true;
         double regionCells=0;for(var region:this.regions)regionCells+=(double)region.blocks.sizeX*region.blocks.sizeY*region.blocks.sizeZ;
         if((double)spanX*spanY*spanZ>regionCells*4)sparse=true;
         try{if(streaming)LightVolume.checkedCompactCellCount(spanX,spanY,spanZ);else LightVolume.checkedCellCount(spanX,spanY,spanZ);}catch(IllegalArgumentException large){sparse=true;}

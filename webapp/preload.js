@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('engine', {
   cancelPreview: ()=>ipcRenderer.invoke('engine:cancelPreview'),
   readSceneChunk: (id, offset, length) => ipcRenderer.invoke('engine:readSceneChunk', { id, offset, length }),
   readScenePage: (id,page)=>ipcRenderer.invoke('engine:readScenePage',{id,page}),
+  readScenePages: (id,pages)=>ipcRenderer.invoke('engine:readScenePages',{id,pages}),
   previewDiagnostic: (message) => ipcRenderer.invoke('engine:previewDiagnostic', message),
   cancel: () => ipcRenderer.invoke('engine:cancel'),
   materials: (request)=>ipcRenderer.invoke('engine:materials',request),

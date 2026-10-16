@@ -5,7 +5,14 @@ import java.util.*;
 
 /** Lighting around occupied sections; distant empty space does not allocate voxel arrays. */
 public final class SparseLightVolume implements LightSampler {
-    private record Section(int x,int y,int z) {}
+    private record Section(int x,int y,int z) {
+        @Override public int hashCode(){return coordinateHash(x,y,z);}
+    }
+    // Record's linear x/z hash creates long collision chains across wide buildings.
+    private static int coordinateHash(int x,int y,int z) {
+        int hash=x*0x8da6b343^y*0xd8163841^z*0xcb1ab31f;
+        hash^=hash>>>16;hash*=0x7feb352d;hash^=hash>>>15;return hash;
+    }
     private static final int[][] DIRECTIONS={{1,0,0},{-1,0,0},{0,1,0},{0,-1,0},{0,0,1},{0,0,-1}};
     private static final int[] DELTA={1,-1,256,-256,16,-16};
     private static final class Chunk {
@@ -20,11 +27,15 @@ public final class SparseLightVolume implements LightSampler {
     private final BlockShape shapes;
     private final boolean realLighting;
     private final LightVolume.Cells source;
-    private record Column(int x,int z) {}
+    private record Column(int x,int z) {
+        @Override public int hashCode(){return coordinateHash(x,0,z);}
+    }
     private static final class ColumnData {
         int blocker=-1;
-        final TreeMap<Integer,Integer> absorption=new TreeMap<>();
-        int direct(int y) {
+        TreeMap<Integer,Integer> absorption=new TreeMap<>();
+        int top=-1;
+        byte[] levels;
+        int calculate(int y) {
             if(y<=blocker)return 0;
             int level=15,previous=-1;
             for(var entry:absorption.tailMap(y,true).descendingMap().entrySet()) {
@@ -33,6 +44,17 @@ public final class SparseLightVolume implements LightSampler {
                 if(level<=0)return 0;
             }
             return Math.max(0,level-(level<15?previous-y:0));
+        }
+        void freeze() {
+            top=absorption.isEmpty()?-1:absorption.lastKey();
+            // The first absorber removes at least one level; after 14 more cells it is dark.
+            if(top>blocker){levels=new byte[15];for(int i=0;i<levels.length;i++)levels[i]=(byte)calculate(top-i);}
+            absorption=null;
+        }
+        int direct(int y) {
+            if(y<=blocker)return 0;
+            if(y>top)return 15;
+            int depth=top-y;return depth<15?levels[depth]:0;
         }
     }
     private final Map<Column,ColumnData> columns=new HashMap<>();
@@ -81,6 +103,11 @@ public final class SparseLightVolume implements LightSampler {
                 ColumnData data=columns.computeIfAbsent(new Column(x,z),key->new ColumnData());
                 if(opacity>=15)data.blocker=Math.max(data.blocker,y);else data.absorption.put(y,opacity);
             }
+        }
+        int columnCount=0;
+        for(ColumnData column:columns.values()){
+            if((columnCount++&1023)==0&&Thread.currentThread().isInterrupted())throw new java.util.concurrent.CancellationException();
+            column.freeze();
         }
         for(Chunk chunk:ids)for(int d=0;d<6;d++)chunk.neighbors[d]=chunks.get(new Section(chunk.section.x+DIRECTIONS[d][0],chunk.section.y+DIRECTIONS[d][1],chunk.section.z+DIRECTIONS[d][2]));
         for(Chunk chunk:ids)chunk.sky.fill(15);

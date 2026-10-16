@@ -79,9 +79,12 @@ public final class Image {
     }
 
     public static Image read(byte[] data) throws IOException {
-        BufferedImage img = ImageIO.read(new ByteArrayInputStream(data));
-        if (img == null) throw new IOException("Unsupported image format");
-        return fromBuffered(img);
+        var input=new javax.imageio.stream.MemoryCacheImageInputStream(new ByteArrayInputStream(data));
+        try{
+            BufferedImage img = ImageIO.read(input);
+            if (img == null) throw new IOException("Unsupported image format");
+            return fromBuffered(img);
+        }finally{try{input.close();}catch(IOException alreadyClosed){/* ImageIO closes a successfully decoded stream. */}}
     }
 
     public static Image read(InputStream in) throws IOException {

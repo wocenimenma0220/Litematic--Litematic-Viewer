@@ -39,6 +39,15 @@ public final class LargeNbtRegression {
         bytes.reset();try(var writer=new DataOutputStream(bytes)){writer.writeInt(incompressibleWords.length);for(long word:incompressibleWords)writer.writeLong(word);}
         var incompressible=PackedLongArray.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())),new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true));
         check(incompressible.retainedBytes()>incompressibleWords.length*7L,"low-compression pages were not charged at retained size");
+        // More than the decoded-page budget: sequential runs, revisits and independent threads.
+        long[] evictionWords=new long[PackedLongArray.PAGE_WORDS*130+3];for(int i=0;i<evictionWords.length;i++)evictionWords[i]=random.nextLong();
+        bytes.reset();try(var writer=new DataOutputStream(bytes)){writer.writeInt(evictionWords.length);for(long word:evictionWords)writer.writeLong(word);}
+        var evicting=PackedLongArray.read(new DataInputStream(new ByteArrayInputStream(bytes.toByteArray())),new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true));
+        var failures=new java.util.concurrent.atomic.AtomicReference<Throwable>();var readers=new ArrayList<Thread>();
+        for(int reader=0;reader<3;reader++){int seed=reader;readers.add(Thread.ofPlatform().start(()->{try{
+            var indices=new Random(seed);for(int i=0;i<6000;i++){int at=indices.nextInt(evictionWords.length-3);for(int j=0;j<3;j++)check(evicting.get(at+j)==evictionWords[at+j],"evicted/last-page word mismatch");}
+        }catch(Throwable e){failures.compareAndSet(null,e);}}));}
+        for(var reader:readers)reader.join();if(failures.get()!=null)throw new AssertionError("concurrent packed reads",failures.get());
         var boundary=new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true);long limit=boundary.retainedLimit();
         check(limit>0&&limit<=NbtSizeTracker.DEFAULT_MAX_BYTES&&limit<=Runtime.getRuntime().maxMemory()/3,"retained heap limit is not production-safe");
         boundary.retainPacked(limit);failed=false;try{boundary.retainPacked(1);}catch(IOException e){failed=true;check(e.getMessage().contains("可用读取内存"),"retained boundary used the wrong error");}
@@ -46,7 +55,7 @@ public final class LargeNbtRegression {
         var logicalBoundary=new NbtSizeTracker(NbtSizeTracker.SCHEMATIC_MAX_BYTES,true);logicalBoundary.incrementPacked(NbtSizeTracker.SCHEMATIC_MAX_BYTES);
         failed=false;try{logicalBoundary.incrementPacked(1);}catch(IOException e){failed=true;check(e.getMessage().contains("解压数据"),"logical boundary used the wrong error");}
         check(failed,"16 GiB logical schematic boundary was bypassed");
-        System.out.println("PASS: raw/GZIP detection, malformed lengths, packed page fidelity, logical/retained production limits, low-compression accounting, >512 MiB logical data with <2 MiB backing");
+        System.out.println("PASS: raw/GZIP detection, malformed lengths, packed page fidelity/eviction/concurrent reads, logical/retained production limits, low-compression accounting, >512 MiB logical data with <2 MiB backing");
         if(args.length>1){
             System.setProperty("litematicrender.skins.offline","true");long start=System.nanoTime();
             try(var engine=new RenderEngine(root)){

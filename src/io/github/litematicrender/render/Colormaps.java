@@ -22,6 +22,14 @@ public final class Colormaps {
         this.foliage = loadMap(resources, "textures/colormap/foliage.png");
         this.dryFoliage = loadMap(resources, "textures/colormap/dry_foliage.png");
     }
+    void writeCache(java.io.DataOutput out)throws java.io.IOException{
+        for(int[] map:new int[][]{grass,foliage,dryFoliage})for(int value:map)out.writeInt(value);
+    }
+    static Colormaps readCache(java.io.DataInput in)throws java.io.IOException{
+        var result=new Colormaps();
+        for(int[] map:new int[][]{result.grass,result.foliage,result.dryFoliage})for(int i=0;i<map.length;i++)map[i]=in.readInt();
+        return result;
+    }
 
     private static int[] loadMap(ResourceManager resources, String path) {
         Optional<byte[]> data = resources.getResource(path);

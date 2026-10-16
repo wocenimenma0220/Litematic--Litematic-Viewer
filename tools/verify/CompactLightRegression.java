@@ -15,7 +15,15 @@ public class CompactLightRegression {
             for(int z=3;z<30;z++)for(int x=3;x<32;x++)cells[(25*sz+z)*sx+x]=registry.getOrMissing("minecraft:stone").defaultState;
             LightVolume.Cells source=(x,y,z)->x<0||y<0||z<0||x>=sx||y>=sy||z>=sz?BlockState.air():cells[(y*sz+z)*sx+x];
             for(boolean real:new boolean[]{false,true}) {
-                var dense=new LightVolume(sx,sy,sz,cells,shapes,real);var compact=new LightVolume(sx,sy,sz,source,shapes,real);
+                int[] reads={0};
+                LightVolume.Cells ordered=(x,y,z)->{
+                    if(real&&reads[0]<cells.length){
+                        int expected=((sy-1-y)*sz+z)*sx+x;
+                        if(reads[0]++!=expected)throw new AssertionError("Direct sky scan must follow packed rows, not repeatedly decompress vertical columns");
+                    }
+                    return source.at(x,y,z);
+                };
+                var dense=new LightVolume(sx,sy,sz,cells,shapes,real);var compact=new LightVolume(sx,sy,sz,ordered,shapes,real);
                 var sparse=new SparseLightVolume(sx,sy,sz,shapes,real);var streamed=new SparseLightVolume(sx,sy,sz,shapes,real,source);
                 for(int y=0;y<sy;y++)for(int z=0;z<sz;z++)for(int x=0;x<sx;x++){var state=source.at(x,y,z);if(!state.isAir()){sparse.put(x,y,z,state);streamed.put(x,y,z,state);}}
                 dense.compute();compact.compute();sparse.compute();streamed.compute();
@@ -23,7 +31,24 @@ public class CompactLightRegression {
                     int expected=dense.cellLight(x,y,z);if(compact.cellLight(x,y,z)!=expected||sparse.cellLight(x,y,z)!=expected||streamed.cellLight(x,y,z)!=expected)throw new AssertionError("Light mismatch at "+x+","+y+","+z+" real="+real);
                 }
             }
-            System.out.println("PASS: dense, compact and sparse lighting match at all 78,540 cells across partial section boundaries");
+            // Tall columns exercise absorption above/below roofs, separated absorbers and the
+            // complete 15-cell falloff. Distant roofs also sample analytically lit empty gaps.
+            int tx=97,ty=129,tz=35;var tall=new BlockState[tx*ty*tz];Arrays.fill(tall,BlockState.air());
+            var stone=registry.getOrMissing("minecraft:stone").defaultState;
+            var water=registry.getOrMissing("minecraft:water").defaultState;
+            var leaves=registry.getOrMissing("minecraft:oak_leaves").defaultState;
+            for(int z=0;z<tz;z++)for(int x=0;x<tx;x++) {
+                if(x>19&&x<77)continue;
+                int top=80+(x+z)%35;tall[(top*tz+z)*tx+x]=water;
+                if(x%3==0)tall[((top-4)*tz+z)*tx+x]=leaves;
+                if(x%5==0)tall[((top+3)*tz+z)*tx+x]=stone;
+                if(x%7==0)tall[((top-20)*tz+z)*tx+x]=stone;
+            }
+            var denseTall=new LightVolume(tx,ty,tz,tall,shapes,true);var sparseTall=new SparseLightVolume(tx,ty,tz,shapes,true);
+            for(int y=0;y<ty;y++)for(int z=0;z<tz;z++)for(int x=0;x<tx;x++)if(!tall[(y*tz+z)*tx+x].isAir())sparseTall.put(x,y,z,tall[(y*tz+z)*tx+x]);
+            denseTall.compute();sparseTall.compute();
+            for(int y=0;y<ty;y++)for(int z=0;z<tz;z++)for(int x=0;x<tx;x++)if(denseTall.cellLight(x,y,z)!=sparseTall.cellLight(x,y,z))throw new AssertionError("Tall sky column mismatch at "+x+","+y+","+z);
+            System.out.println("PASS: dense, compact and sparse lighting match; partial section edges, tall absorption columns, roofs and unallocated air gaps");
         }
     }
 }

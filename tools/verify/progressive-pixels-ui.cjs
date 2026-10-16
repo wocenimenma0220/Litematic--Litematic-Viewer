@@ -4,6 +4,7 @@ app.setPath('userData',path.join(out,'electron'));app.commandLine.appendSwitch('
 app.whenReady().then(async()=>{const win=new BrowserWindow({width:700,height:520,show:false,webPreferences:{nodeIntegration:true,contextIsolation:false,backgroundThrottling:false}});try{
  const coarse=await transfer.open(path.join(out,'overview.lmesh'),win.webContents.id),fine=await transfer.open(path.join(out,'detail.lmesh'),win.webContents.id,{retain:true});
  ipcMain.handle('chunk',(e,o,n)=>transfer.read(e.sender.id,coarse.id,o,n));ipcMain.handle('page',(e,p)=>transfer.readPage(e.sender.id,p.source||coarse.id,p));
+ ipcMain.handle('pages',(e,ps)=>transfer.readPages(e.sender.id,ps[0].source||coarse.id,ps));
  const scripts=['gpu-view.js','lod-stream.js'].map(f=>`<script src="${url.pathToFileURL(path.join(root,'webapp/renderer',f)).href}"></script>`).join(''),file=path.join(out,'comparison.html');fs.writeFileSync(file,`<body style="margin:0"><div style="width:640px;height:384px"><canvas id="v" style="width:100%;height:100%"></canvas></div>${scripts}`);await win.loadFile(file);
  const atlas=fs.readFileSync(path.join(out,'atlas.png')).toString('base64'),overview=fs.readFileSync(path.join(out,'overview.png')).toString('base64'),legacy=fs.readFileSync(path.join(out,'legacy.bin')).toString('base64'),catalog=JSON.parse(fs.readFileSync(path.join(out,'catalog.json')));
  const result=await win.webContents.executeJavaScript(`(async()=>{
@@ -14,7 +15,7 @@ app.whenReady().then(async()=>{const win=new BrowserWindow({width:700,height:520
   view.uploadMesh(Uint8Array.from(Buffer.from('${legacy}','base64')).buffer);await image('${atlas}');const bounds={min:view.min.slice(),max:view.max.slice()};
   for(const [rotationDeg,slantDeg]of angles){view.draw({...camera,rotationDeg,slantDeg});references.push(pixels());}
   let release;const gate=new Promise(resolve=>release=resolve);let blockDetail=true;
-  await view.uploadLodStream((o,n)=>ipc.invoke('chunk',o,n),${coarse.size},{overview:true,budgetBytes:64*1048576,onError:e=>errors.push(String(e)),readPage:async p=>{if(p.source&&blockDetail)await gate;return ipc.invoke('page',p);}});
+  await view.uploadLodStream((o,n)=>ipc.invoke('chunk',o,n),${coarse.size},{overview:true,budgetBytes:64*1048576,onError:e=>errors.push(String(e)),readPage:async p=>{if(p.source&&blockDetail)await gate;return ipc.invoke('page',p);},readPages:async ps=>{if(ps[0].source&&blockDetail)await gate;return ipc.invoke('pages',ps);}});
   view.setFrameBounds(bounds.min,bounds.max);await image('${overview}');view.draw({...camera,lodLevel:3});await view.stream.settled();view.draw({...camera,lodLevel:3});
   const stream=view.stream,old=new Map(stream.residents);await image('${atlas}');stream.beginProgressive(${JSON.stringify(fine.id)},${catalog.sections.length});
   stream.appendProgressive(${JSON.stringify(catalog.sections.slice(0,1))},${fine.size});view.draw(camera);await new Promise(r=>setTimeout(r,20));

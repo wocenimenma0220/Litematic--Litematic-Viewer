@@ -58,6 +58,34 @@ public final class SpriteAtlas {
         Image white=new Image(1,1);white.pixels()[0]=0xffffffff;
         return new SpriteAtlas("overview",Map.of("litematicrender:overview",new SpriteContents("litematicrender:overview",1,1,white,1,1,List.of(0),false)),0);
     }
+    /** Only immutable resource sprites are persisted; scene text and skins stay scene-specific. */
+    void writeCache(java.io.DataOutput out)throws java.io.IOException{
+        out.writeUTF(id);out.writeInt(padding);out.writeInt(baseSprites.size());
+        for(var sprite:baseSprites.values().stream().sorted(java.util.Comparator.comparing(s->s.name)).toList()){
+            out.writeUTF(sprite.name);out.writeInt(sprite.frameWidth);out.writeInt(sprite.frameHeight);
+            out.writeInt(sprite.sheet.width);out.writeInt(sprite.sheet.height);out.writeInt(sprite.frameCount);out.writeInt(sprite.frameTime);
+            out.writeBoolean(sprite.interpolate);out.writeInt(sprite.frames.size());for(int frame:sprite.frames)out.writeInt(frame);
+            for(int pixel:sprite.sheet.pixels())out.writeInt(pixel);
+        }
+    }
+    static SpriteAtlas readCache(java.io.DataInput in)throws java.io.IOException{
+        String id=in.readUTF();int padding=in.readInt(),count=in.readInt();
+        if(!id.equals("blocks")||padding!=1||count<1||count>32768)throw new java.io.IOException("Invalid cached atlas");
+        long pixels=0,frames=0;Map<String,SpriteContents> loaded=new HashMap<>();
+        for(int i=0;i<count;i++){
+            String name=in.readUTF();int fw=in.readInt(),fh=in.readInt(),w=in.readInt(),h=in.readInt(),fc=in.readInt(),ft=in.readInt();
+            boolean interpolate=in.readBoolean();int n=in.readInt();pixels+=(long)w*h;frames+=n;
+            if(name.length()>512||loaded.containsKey(name)||w<1||h<1||w>16384||h>16384||fw<1||fh<1||fw>w||fh>h||w%fw!=0||h%fh!=0
+                ||fc!=(w/fw)*(h/fh)||ft<1||n<1||frames>1048576||pixels>32L*1024*1024)throw new java.io.IOException("Invalid cached sprite");
+            // Preserve metadata exactly. A static replacement may inherit unused animation
+            // frame numbers from a lower pack; the normal loader also retains those numbers.
+            var order=new ArrayList<Integer>(n);for(int k=0;k<n;k++)order.add(in.readInt());
+            var image=new Image(w,h);for(int p=0;p<image.pixels().length;p++)image.pixels()[p]=in.readInt();
+            loaded.put(name,new SpriteContents(name,fw,fh,image,fc,ft,List.copyOf(order),interpolate));
+        }
+        if(!loaded.containsKey("minecraft:missingno"))throw new java.io.IOException("Missing cached fallback sprite");
+        return new SpriteAtlas(id,loaded,padding);
+    }
 
     /** Restitch scene-generated text and skins so CPU export and WebGL use the same pixels. */
     public void replaceGeneratedSprites(Map<String, Image> images) {

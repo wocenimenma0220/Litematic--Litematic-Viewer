@@ -24,6 +24,9 @@ public final class StreamMeshExporter {
         SceneMesh buildSection(SectionVisibility.Position position);
         /** Number of 16-cell ownership sections built together on each axis. */
         default int buildUnitSections(){return 1;}
+        default int sectionWorkers(){return 1;}
+        /** Called once on each worker after atlas/light publication; mutable caches must be local. */
+        default Source forkForSections(){return this;}
         default Map<SectionVisibility.Position,SceneMesh> buildSections(List<SectionVisibility.Position> positions){
             var result=new LinkedHashMap<SectionVisibility.Position,SceneMesh>();for(var position:positions)result.put(position,buildSection(position));return result;
         }
@@ -49,25 +52,36 @@ public final class StreamMeshExporter {
         var entries=new ArrayList<Entry>();float[] bounds={Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.POSITIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY,Float.NEGATIVE_INFINITY};
         long total=0;int maximum=0;Map<String,Object> skins=Map.of(),entities=Map.of();
         Files.createDirectories(destination.toAbsolutePath().getParent());Path temporary=progress==null?Files.createTempFile(destination.toAbsolutePath().getParent(),".lmesh5-",".tmp"):destination;
-        // Light and generated atlas tiles are complete before publishing any section. One producer
-        // owns mutable builder caches; the writer consumes immutable meshes through a bounded queue.
+        // Stable light/atlas are shared; workers own mutable builder caches. Publish in submission
+        // order so camera priority and deterministic files survive out-of-order completion.
         int buildUnit=Math.max(1,Math.min(2,builder.buildUnitSections()));
+        int workers=positions.size()<32?1:Math.max(1,Math.min(4,builder.sectionWorkers()));
         var ready=new java.util.concurrent.ArrayBlockingQueue<PreparedSection>(Math.max(2,buildUnit*buildUnit*buildUnit));
         Thread producer=Thread.ofPlatform().name("schematic-section-builder").daemon(true).unstarted(()->{
+            java.util.concurrent.ExecutorService pool=null;
             try{
                 var ordered=new ArrayList<>(positions);long revision=Long.MIN_VALUE,lastPriority=0;
-                while(!ordered.isEmpty()){
-                    if(progress!=null&&revision!=progress.viewRevision()&&(lastPriority==0||System.nanoTime()-lastPriority>400_000_000L)){
-                        revision=progress.viewRevision();lastPriority=System.nanoTime();progress.prioritize(ordered);
+                var pending=new ArrayDeque<java.util.concurrent.Future<List<PreparedSection>>>();
+                var workerSource=ThreadLocal.withInitial(builder::forkForSections);
+                if(workers>1){var sequence=new java.util.concurrent.atomic.AtomicInteger();pool=java.util.concurrent.Executors.newFixedThreadPool(workers,task->Thread.ofPlatform().name("schematic-section-worker-"+sequence.incrementAndGet()).daemon(true).unstarted(task));}
+                while(!ordered.isEmpty()||!pending.isEmpty()){
+                    while(!ordered.isEmpty()&&pending.size()<workers){
+                        if(progress!=null&&revision!=progress.viewRevision()&&(lastPriority==0||System.nanoTime()-lastPriority>400_000_000L)){
+                            revision=progress.viewRevision();lastPriority=System.nanoTime();progress.prioritize(ordered);
+                        }
+                        var first=ordered.removeFirst();var batch=new ArrayList<SectionVisibility.Position>();batch.add(first);
+                        if(buildUnit>1){int gx=Math.floorDiv(first.x(),buildUnit),gy=Math.floorDiv(first.y(),buildUnit),gz=Math.floorDiv(first.z(),buildUnit);
+                            for(var iterator=ordered.iterator();iterator.hasNext();){var candidate=iterator.next();if(Math.floorDiv(candidate.x(),buildUnit)==gx&&Math.floorDiv(candidate.y(),buildUnit)==gy&&Math.floorDiv(candidate.z(),buildUnit)==gz){batch.add(candidate);iterator.remove();}}
+                        }
+                        if(pool==null){for(var section:buildBatch(builder,batch))ready.put(section);}
+                        else pending.addLast(pool.submit(()->buildBatch(workerSource.get(),batch)));
                     }
-                    var first=ordered.removeFirst();int gx=Math.floorDiv(first.x(),buildUnit),gy=Math.floorDiv(first.y(),buildUnit),gz=Math.floorDiv(first.z(),buildUnit);
-                    var batch=new ArrayList<SectionVisibility.Position>();batch.add(first);
-                    for(var iterator=ordered.iterator();iterator.hasNext();){var candidate=iterator.next();if(Math.floorDiv(candidate.x(),buildUnit)==gx&&Math.floorDiv(candidate.y(),buildUnit)==gy&&Math.floorDiv(candidate.z(),buildUnit)==gz){batch.add(candidate);iterator.remove();}}
-                    var meshes=builder.buildSections(batch);for(var position:batch){var mesh=meshes.get(position);if(mesh==null)throw new IllegalStateException("32 格构建未返回所属区块");ready.put(new PreparedSection(position,mesh,null));}
+                    if(!pending.isEmpty())for(var section:pending.removeFirst().get())ready.put(section);
                 }
             }
             catch(InterruptedException stopped){Thread.currentThread().interrupt();}
             catch(Throwable error){try{ready.put(new PreparedSection(null,null,error));}catch(InterruptedException stopped){Thread.currentThread().interrupt();}}
+            finally{if(pool!=null){pool.shutdownNow();boolean interrupted=Thread.interrupted();while(!pool.isTerminated())try{pool.awaitTermination(50,java.util.concurrent.TimeUnit.MILLISECONDS);}catch(InterruptedException stopped){interrupted=true;}if(interrupted)Thread.currentThread().interrupt();}}
         });
         try(var file=new RandomAccessFile(temporary.toFile(),"rw")) {
             file.setLength(HEADER_BYTES);file.seek(HEADER_BYTES);
@@ -107,11 +121,18 @@ public final class StreamMeshExporter {
                 if(progress!=null)progress.section(entry,file.getFilePointer(),entries.size());
             }
             if(entries.isEmpty())Arrays.fill(bounds,0);
-            long catalog=file.getFilePointer();file.writeInt(entries.size());
-            for(var entry:entries) {
-                file.writeInt(entry.position.x());file.writeInt(entry.position.y());file.writeInt(entry.position.z());
-                for(float value:entry.bounds)file.writeFloat(value);file.write(entry.exits);file.write(entry.solid);
-                for(var level:entry.levels){file.writeInt(level.size());for(var page:level){file.writeLong(page.offset);file.writeInt(page.bytes);file.writeInt(page.quads);file.writeInt(page.layer);file.writeInt(page.rawBytes);file.writeInt(page.codec);file.writeInt((int)page.checksum);}}
+            long catalog=file.getFilePointer();
+            // Buffer only the final catalog. Live geometry pages remain immediately readable.
+            try(var data=new DataOutputStream(new BufferedOutputStream(new OutputStream(){
+                @Override public void write(int value)throws IOException{file.write(value);}
+                @Override public void write(byte[] bytes,int offset,int length)throws IOException{file.write(bytes,offset,length);}
+            },65536))){
+                data.writeInt(entries.size());
+                for(var entry:entries) {
+                    data.writeInt(entry.position.x());data.writeInt(entry.position.y());data.writeInt(entry.position.z());
+                    for(float value:entry.bounds)data.writeFloat(value);data.write(entry.exits);data.write(entry.solid);
+                    for(var level:entry.levels){data.writeInt(level.size());for(var page:level){data.writeLong(page.offset);data.writeInt(page.bytes);data.writeInt(page.quads);data.writeInt(page.layer);data.writeInt(page.rawBytes);data.writeInt(page.codec);data.writeInt((int)page.checksum);}}
+                }
             }
             long length=file.getFilePointer()-catalog;if(length>128L*1024*1024)throw new IOException("投影分块索引过大，请拆分投影。");
             long bytes=file.length();file.seek(0);file.write(new byte[]{'L','M','E','S','H','7',0,0});file.writeInt(1);file.writeInt(entries.size());file.writeLong(catalog);file.writeInt((int)length);file.writeInt(LOD_COUNT);file.writeLong(total);for(float value:bounds)file.writeFloat(value);
@@ -120,6 +141,11 @@ public final class StreamMeshExporter {
         finally{producer.interrupt();boolean interrupted=Thread.interrupted();while(producer.isAlive())try{producer.join(50);}catch(InterruptedException stopped){interrupted=true;}if(interrupted)Thread.currentThread().interrupt();}
         if(progress==null)Files.move(temporary,destination,StandardCopyOption.REPLACE_EXISTING);
         return new Index(List.copyOf(entries),bounds,total,maximum,Files.size(destination),skins,entities);
+    }
+    private static List<PreparedSection> buildBatch(Source source,List<SectionVisibility.Position> batch) {
+        var meshes=source.buildSections(batch);var result=new ArrayList<PreparedSection>(batch.size());
+        for(var position:batch){var mesh=meshes.get(position);if(mesh==null)throw new IllegalStateException("构建未返回所属区块");result.add(new PreparedSection(position,mesh,null));}
+        return result;
     }
     public static Map<String,Object> describe(Entry entry) {
         var result=new LinkedHashMap<String,Object>();var p=entry.position();result.put("position",List.of(p.x(),p.y(),p.z()));

@@ -28,7 +28,7 @@ param(
     [ValidatePattern('^[\p{L}\p{N}_-]+$')]
     [string]$PackageName = '投影预览',
     [ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')]
-    [string]$Version = '1.0.17.15'
+    [string]$Version = '1.1.01'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -142,6 +142,7 @@ New-Item -ItemType Directory -Path (Join-Path $stageDir 'logs') -Force | Out-Nul
 # The launcher sits at the root, which is the whole point of the package layout.
 Copy-Item $launcherExe -Destination $stageDir
 Copy-Item -LiteralPath (Join-Path $ProjectRoot 'README.md') -Destination $stageDir
+Copy-Item -LiteralPath (Join-Path $ProjectRoot 'docs') -Destination $stageDir -Recurse
 $evaluationDocs = Join-Path $ProjectRoot '评估与测评'
 if (Test-Path -LiteralPath $evaluationDocs) {
     Copy-Item -LiteralPath $evaluationDocs -Destination $stageDir -Recurse

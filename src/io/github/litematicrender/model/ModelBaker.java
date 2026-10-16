@@ -69,6 +69,14 @@ public final class ModelBaker {
         this.registry = registry;
     }
 
+    /** Share immutable baked values, but keep parent-resolution cycle detection worker-local. */
+    public ModelBaker fork() {
+        var worker=new ModelBaker(resources,registry);
+        worker.definitions.putAll(definitions);worker.resolvedCache.putAll(resolvedCache);
+        worker.bakedCache.putAll(bakedCache);worker.fontRenderer=fontRenderer;
+        return worker;
+    }
+
     // ------------------------------------------------------------------
     // Model definition loading + parent chain
 
