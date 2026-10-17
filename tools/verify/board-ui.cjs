@@ -1,7 +1,7 @@
 const {chromium}=require('C:/Users/roy/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
 const path=require('node:path'),assert=require('node:assert/strict');
 (async()=>{
-  const browser=await chromium.launch({headless:true,channel:'msedge'});
+  const browser=await chromium.launch({headless:true,channel:'msedge',args:['--allow-file-access-from-files']});
   try{
     const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
     await page.addInitScript(()=>{window.__placementAudio=[];const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){window.__placementAudio.push({src:this.src,rate:this.playbackRate});return play.call(this);};});
@@ -9,6 +9,21 @@ const path=require('node:path'),assert=require('node:assert/strict');
     await page.goto('file:///'+path.resolve(__dirname,'../../webapp/renderer/index.html').replaceAll('\\','/'));
     await page.evaluate(()=>localStorage.setItem('litematic-board-v2-side',JSON.stringify({version:2,view:'side',cells:[['0,0',{id:'stone'}]]})));
     const choose=async id=>{await page.locator('#boardSearch').fill(id);await page.locator(`#boardPalette button[data-block="${id}"]`).click();};
+    const preview=async(locator,id,states,view)=>{
+      const result=await locator.evaluate(async(canvas,{id,states,view})=>{
+        const block=BoardCatalog.find(b=>b.id===id),values={...block.defaults,...states};
+        const visual=block.visuals.find(v=>Object.entries(v.when).every(([key,value])=>values[key]===value));
+        const atlas=new Image();atlas.src='board-atlas.png';await atlas.decode();
+        const expected=document.createElement('canvas');expected.width=expected.height=32;
+        const index=visual[view];expected.getContext('2d').drawImage(atlas,index%64*32,Math.floor(index/64)*32,32,32,0,0,32,32);
+        const pixels=canvas.getContext('2d').getImageData(0,0,32,32).data,reference=expected.getContext('2d').getImageData(0,0,32,32).data;
+        let left=32,top=32,right=-1,bottom=-1,count=0;
+        for(let y=0;y<32;y++)for(let x=0;x<32;x++)if(pixels[(y*32+x)*4+3]){left=Math.min(left,x);right=Math.max(right,x);top=Math.min(top,y);bottom=Math.max(bottom,y);count++;}
+        return{matches:pixels.every((n,i)=>n===reference[i]),width:right-left+1,height:bottom-top+1,count};
+      },{id,states,view});
+      assert(result.matches,`${id} ${JSON.stringify(states)} preview must use ${view} atlas image`);
+      assert(result.count>0,`${id} preview must remain visible`);return result;
+    };
     const packet=async()=>{const ready=page.waitForEvent('download');await page.locator('#boardSave').click();const download=await ready;assert.equal(download.suggestedFilename(),'二维搭建.json');const stream=await download.createReadStream();let text='';for await(const chunk of stream)text+=chunk;return JSON.parse(text);};
     const load=async data=>{await page.locator('#boardFile').setInputFiles({name:'test.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(data))});await page.waitForFunction(()=>document.getElementById('boardFile').value==='');};
     await page.locator('#menuBoard').click();assert(await page.locator('#boardViewDialog').evaluate(d=>d.open));assert.equal(await page.locator('#boardDialog').evaluate(d=>d.open),false);
@@ -29,7 +44,11 @@ const path=require('node:path'),assert=require('node:assert/strict');
     assert.equal(await page.locator('[data-property="facing"] button').count(),6);await page.getByRole('button',{name:'facing=east',exact:true}).click();await page.getByRole('button',{name:'triggered=true',exact:true}).click();
     assert.equal(await page.locator('[data-property="facing"]').innerText(),'方向');
     await choose('observer');assert.equal(await page.locator('#boardState fieldset').count(),1);
-    await choose('rail');assert.equal(await page.locator('[data-property="shape"] button').count(),10);await page.getByRole('button',{name:'shape=ascending_east',exact:true}).click();
+    await choose('rail');assert.equal(await page.locator('[data-property="shape"] button').count(),10);
+    let projected=await preview(page.locator('#boardPalette [data-block="rail"] canvas'),'rail',{},'icon');assert(projected.width>=24&&projected.height>=24,'palette rail keeps its readable face');
+    projected=await preview(page.getByRole('button',{name:'shape=north_south',exact:true}).locator('canvas'),'rail',{shape:'north_south'},'sprite');assert(projected.width>=24&&projected.height<=3,'side-view flat rail chooser shows a thin line');
+    projected=await preview(page.getByRole('button',{name:'shape=ascending_east',exact:true}).locator('canvas'),'rail',{shape:'ascending_east'},'sprite');assert(projected.width>=24&&projected.height>=24&&projected.count<=256,'side-view ascending rail chooser shows its thin diagonal');
+    await page.getByRole('button',{name:'shape=ascending_east',exact:true}).click();
     await choose('powered_rail');assert.equal(await page.locator('[data-property="shape"] button').count(),6);assert(await page.locator('[data-property="waterlogged"]').isVisible());assert(await page.locator('[data-property="powered"]').isVisible());
     await choose('repeater');assert.equal(await page.locator('[data-property="delay"] button').count(),4);assert(await page.locator('[data-property="locked"]').isVisible());
     await choose('comparator');assert.equal(await page.locator('[data-property="mode"] button').count(),2);
@@ -47,6 +66,9 @@ const path=require('node:path'),assert=require('node:assert/strict');
     await page.locator('#boardClose').click();await page.locator('#menuBoard').click();await page.locator('#boardViewTop').click();assert.equal((await packet()).view,'top');
     await load({version:2,view:'top',zoom:40,pan:{x:500,y:160},cells:[['0,0',{id:'water'}],['3,0',{id:'stone'}],['-2,-1',{id:'powered_rail',states:{shape:'ascending_east',powered:'true',waterlogged:'false'}}]]});
     await choose('rail');await page.getByRole('button',{name:'shape=ascending_east',exact:true}).click();
+    projected=await preview(page.getByRole('button',{name:'shape=north_south',exact:true}).locator('canvas'),'rail',{shape:'north_south'},'top');assert(projected.width>=24&&projected.height>=24,'top-view rail chooser shows its broad upper face');
+    await preview(page.getByRole('button',{name:'shape=ascending_east',exact:true}).locator('canvas'),'rail',{shape:'ascending_east'},'top');
+    await preview(page.locator('#boardPalette [data-block="rail"] canvas'),'rail',{},'icon');
     await page.screenshot({path:path.resolve(__dirname,'board-ui-top.png')});
     await page.locator('#boardClose').click();await page.locator('#menuBoard').click();await page.locator('#boardViewSide').click();assert.equal((await packet()).cells.length,2,'views keep separate boards');
     await page.screenshot({path:path.resolve(__dirname,'board-ui.png')});
@@ -60,15 +82,21 @@ const path=require('node:path'),assert=require('node:assert/strict');
     const colors=['white','orange','magenta','light_blue','yellow','lime','pink','gray','light_gray','cyan','purple','blue','brown','green','red','black'];
     const flags=colors.map((color,i)=>[`${i%8},${Math.floor(i/8)}`,{id:color+'_banner',states:{rotation:String(i)}}]);
     await load({version:2,view:'side',zoom:48,pan:{x:300,y:70},cells:flags});
-    await choose('red_banner');assert.equal(await page.locator('[data-property="rotation"] option').count(),16);
-    await page.locator('[data-property="rotation"] select').selectOption('4');
+    await choose('red_banner');assert.equal(await page.locator('[data-property="rotation"] button').count(),16);
+    projected=await preview(page.locator('#boardPalette [data-block="red_banner"] canvas'),'red_banner',{},'icon');assert(projected.width>=10&&projected.height>=28,'palette banner keeps its broad cloth face');
+    projected=await preview(page.getByRole('button',{name:'rotation=0',exact:true}).locator('canvas'),'red_banner',{rotation:'0'},'sprite');assert(projected.width>=10&&projected.height>=28,'side-view banner rotation 0 shows its cloth');
+    projected=await preview(page.getByRole('button',{name:'rotation=4',exact:true}).locator('canvas'),'red_banner',{rotation:'4'},'sprite');assert(projected.width<=4&&projected.height>=28,'side-view banner rotation 4 shows a thin edge');
+    await page.getByRole('button',{name:'rotation=4',exact:true}).click();
     await page.mouse.click(r.x+708,r.y+94);data=await packet();
     assert.equal(data.cells.find(([key])=>key==='8,0')[1].states.rotation,'4');
     assert.equal(data.cells.find(([key])=>key==='8,0')[1].id,'red_banner');
     await page.screenshot({path:path.resolve(__dirname,'board-ui-banners.png')});
     await page.locator('#boardClose').click();await page.locator('#menuBoard').click();await page.locator('#boardViewTop').click();
     await load({version:2,view:'top',zoom:48,pan:{x:300,y:70},cells:flags});await choose('blue_banner');
+    projected=await preview(page.getByRole('button',{name:'rotation=0',exact:true}).locator('canvas'),'blue_banner',{rotation:'0'},'top');assert(projected.width>=10&&projected.height<=4,'top-view banner rotation 0 shows its horizontal edge');
+    projected=await preview(page.getByRole('button',{name:'rotation=4',exact:true}).locator('canvas'),'blue_banner',{rotation:'4'},'top');assert(projected.width<=4&&projected.height>=10,'top-view banner edge rotates with its state');
+    await preview(page.locator('#boardPalette [data-block="blue_banner"] canvas'),'blue_banner',{},'icon');
     await page.screenshot({path:path.resolve(__dirname,'board-ui-banners-top.png')});
-    assert.deepEqual(errors,[]);console.log('PASS: 16 banner colors, selection/rotation/placement in both views; toolbar 61.8%, canvas controls, states, save and audio');
+    assert.deepEqual(errors,[]);console.log('PASS: broad palette icons, actual rail/banner direction previews and placement in both views; toolbar 61.8%, canvas controls, states, save and audio');
   }finally{await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

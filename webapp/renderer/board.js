@@ -42,7 +42,7 @@
     if(tileCache.size>6000)tileCache.clear();tileCache.set(key,c);return c;
   }
   function drawTile(context,cell,x,y,size,alpha=1){if(!defs.has(cell?.id)||!atlas.naturalWidth)return;context.save();context.globalAlpha=alpha;context.imageSmoothingEnabled=false;context.drawImage(tileImage(cell),x,y,size,size);context.restore();}
-  function tile(cell){const c=document.createElement('canvas');c.width=c.height=32;if(atlas.naturalWidth)c.getContext('2d').drawImage(tileImage(cell,'icon'),0,0);return c;}
+  function tile(cell,view='icon'){const c=document.createElement('canvas');c.width=c.height=32;if(atlas.naturalWidth)c.getContext('2d').drawImage(tileImage(cell,view),0,0);return c;}
   function setState(property,value){const states={...placement.states,[property]:value};
     if(property==='powered'&&('open' in states))states.open=value;
     placement=world.normalize({id:selected.id,states});drawOptions();dirty=true;
@@ -55,12 +55,12 @@
       if(selected.id==='observer'&&property==='powered')continue;
       const field=document.createElement('fieldset'),legend=document.createElement('legend');field.dataset.property=property;legend.textContent=names[property]||property;field.append(legend);
       const iconOnly=['facing','axis','shape','rotation','orientation','vertical_direction'].includes(property);
-      if(options.length>12||options.length>6&&options.every(v=>/^\d+$/.test(v))){
+      if(!iconOnly&&(options.length>12||options.length>6&&options.every(v=>/^\d+$/.test(v)))){
         const select=document.createElement('select');select.setAttribute('aria-label',names[property]||property);for(const value of options){const option=document.createElement('option');option.value=value;option.textContent=values[value]||value;select.append(option);}select.value=placement.states[property];select.onchange=()=>setState(property,select.value);field.append(select);
       }else for(const value of options){
         const button=document.createElement('button');button.type='button';button.className='board-option';button.title=property+'='+value;button.setAttribute('aria-label',button.title);button.setAttribute('aria-pressed',String(placement.states[property]===value));
         button.disabled=property==='waterlogged'&&value==='true'&&placement.states.type==='double'&&selected.id.endsWith('_slab');
-        button.append(tile(world.normalize({id:selected.id,states:{...placement.states,[property]:value}})));if(!iconOnly)button.append(document.createTextNode(values[value]||value));button.onclick=()=>setState(property,value);field.append(button);
+        button.append(tile(world.normalize({id:selected.id,states:{...placement.states,[property]:value}}),world.view));if(!iconOnly)button.append(document.createTextNode(values[value]||value));button.onclick=()=>setState(property,value);field.append(button);
       }
       host.append(field);
     }

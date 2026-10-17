@@ -19,6 +19,7 @@ RESOURCE_ROOTS = [XK] + [ROOT / ('assets/builtin/'+pack+'/assets/minecraft') for
 DYE_COLORS = dict(zip(
     ['white','orange','magenta','light_blue','yellow','lime','pink','gray','light_gray','cyan','purple','blue','brown','green','red','black'],
     [16383998,16351261,13061821,3847130,16701501,8439583,15961002,4673362,10329495,1481884,8991416,3949738,8606770,6192150,11546150,1908001]))
+@lru_cache(None)
 def resource(relative):
     return next((root / relative for root in RESOURCE_ROOTS if (root / relative).is_file()), ASSETS / relative)
 lang = json.loads((ASSETS / 'lang/en_us.json').read_text(encoding='utf8'))
@@ -92,6 +93,7 @@ def enum_values(name):
     values = re.findall(r'\b[A-Z][A-Z_0-9]*\s*\(\s*"([a-z_0-9]+)"', body)
     return values or [v.lower() for v in re.findall(r'(?:^|,)\s*([A-Z][A-Z_0-9]*)\s*(?:,|$)',body)]
 
+@lru_cache(None)
 def declared_properties(source):
     fields = {}
     for key,expression in FIELD.findall(source): fields.setdefault(key,expression)
@@ -140,6 +142,16 @@ def model(name):
     name = name.split(':')[-1]
     if name in model_cache:
         return model_cache[name]
+    banner=re.fullmatch(r'block/board_(.+)_banner',name)
+    if banner and banner[1] in DYE_COLORS:
+        def box(start,end,texture,uvs):
+            return {'from':start,'to':end,'faces':{side:{'texture':'#'+texture,'uv':[v/4 for v in uv]} for side,uv in uvs.items()}}
+        result={'textures':{'cloth':'board/banner/'+banner[1],'stand':'minecraft:entity/banner/banner_base'},'elements':[
+            box([7.5,.5,7.5],[8.5,15,8.5],'stand',{'north':[46,2,48,44],'south':[50,2,52,44],'west':[44,2,46,44],'east':[48,2,50,44],'up':[46,0,48,2],'down':[48,0,50,2]}),
+            box([4.5,14.5,7.5],[11.5,15.5,8.5],'stand',{'north':[2,44,22,46],'south':[24,44,44,46],'west':[0,44,2,46],'east':[22,44,24,46],'up':[2,42,22,44],'down':[22,42,42,44]}),
+            box([4.5,1,8.5],[11.5,14.5,9],'cloth',{'north':[22,1,42,41],'south':[1,1,21,41],'west':[0,1,1,41],'east':[21,1,22,41],'up':[1,0,21,1],'down':[21,0,41,1]})]}
+        model_cache[name]=result
+        return result
     copper=re.fullmatch(r'block/board_(copper(?:_exposed|_weathered|_oxidized)?)_chest_(single|left|right)',name)
     if copper:
         texture,kind=copper.groups();template='center' if kind=='single' else kind
@@ -168,6 +180,8 @@ def resolve(tex, textures):
         if not tex.startswith('#'):
             break
         tex = textures.get(tex[1:], '')
+    if tex.startswith('board/banner/'):
+        return banner_texture(tex.rsplit('/',1)[-1]).copy()
     path = resource('textures/' + tex.split(':')[-1] + '.png')
     if not tex or not path.is_file():
         return None
@@ -175,7 +189,8 @@ def resolve(tex, textures):
 
 sprite_images = []
 sprite_cache = {}
-def render_banner(color):
+@lru_cache(None)
+def banner_texture(color):
     # Vanilla's block/banner model only declares oak-plank particles. Its visible
     # cloth is an entity texture with a dye layer, not that fallback block face.
     base = resolve('entity/banner/banner_base', {})
@@ -187,7 +202,11 @@ def render_banner(color):
     channels = overlay.split()
     overlay = Image.merge('RGBA', tuple(channels[i].point(
         lambda n, t=(dye >> (16-i*8)) & 255: n*t//255) for i in range(3)) + (channels[3],))
-    cloth = Image.alpha_composite(base, overlay)
+    return Image.alpha_composite(base, overlay)
+
+def render_banner(color):
+    base = resolve('entity/banner/banner_base', {})
+    cloth = banner_texture(color)
     def crop(texture, rect, size):
         return texture.crop(tuple(n*texture.width/64 for n in rect)).resize(size, Image.Resampling.NEAREST)
     image = Image.new('RGBA', (32,32))
@@ -210,17 +229,17 @@ def render(variant, view='side'):
     if key in sprite_cache:
         return sprite_cache[key]
     banner = re.fullmatch(r'block/board_(.+)_banner', variant.get('model', ''))
-    if banner and banner[1] in DYE_COLORS:
+    if banner and banner[1] in DYE_COLORS and view=='icon':
         index = len(sprite_images)
-        # Like rails, show the broad, flat face in both views so it stays legible.
+        # The palette always shows a broad face; placed/state views use geometry.
         sprite_images.append(render_banner(banner[1]))
         sprite_cache[key] = index
         return index
     data = model(variant.get('model', ''))
     image = Image.new('RGBA', (32, 32))
     faces = []
-    rx, ry = [math.radians(variant.get(a, 0)) for a in ['x', 'y']]
-    projection_axis='up' if view=='top' or 'rail' in variant.get('model','') else 'north'
+    rx, ry = [math.radians(-variant.get(a, 0)) for a in ['x', 'y']]
+    projection_axis='up' if view=='top' or view=='icon' and 'rail' in variant.get('model','') else 'north'
     def project(p):
         x,y,z=p
         if projection_axis=='up': return x*2,z*2,-y
@@ -241,20 +260,24 @@ def render(variant, view='side'):
         return x+8,y+8,z+8
     quads=[]
     areas={'north':0,'up':0,'east':0}
-    for element in data.get('elements', []):
+    element_areas={}
+    for element_index,element in enumerate(data.get('elements', [])):
+        element_areas[element_index]={'north':0,'up':0,'east':0}
         a,b,c = element['from']; d,e,f = element['to']
         vertices = {'north':[(a,e,c),(d,e,c),(d,b,c),(a,b,c)], 'south':[(d,e,f),(a,e,f),(a,b,f),(d,b,f)], 'west':[(a,e,f),(a,e,c),(a,b,c),(a,b,f)], 'east':[(d,e,c),(d,e,f),(d,b,f),(d,b,c)], 'up':[(a,e,c),(d,e,c),(d,e,f),(a,e,f)], 'down':[(a,b,f),(d,b,f),(d,b,c),(a,b,c)]}
         for direction,face in element.get('faces', {}).items():
             points = [transform(p,element.get('rotation')) for p in vertices[direction]]
-            quads.append((points,face))
+            quads.append((points,face,element_index))
             u=[points[1][i]-points[0][i] for i in range(3)];v=[points[3][i]-points[0][i] for i in range(3)]
             normal=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]]
-            for axis,index in [('north',2),('up',1),('east',0)]: areas[axis]+=abs(normal[index])
-    # Keep an orthogonal, flat face. Thin blocks automatically choose the plane
-    # with the largest projected surface instead of becoming an edge-on line.
+            for axis,index in [('north',2),('up',1),('east',0)]:
+                areas[axis]+=abs(normal[index])
+                element_areas[element_index][axis]+=abs(normal[index])
+    # Only palette icons choose the most readable face. State/placed previews
+    # keep the board's actual viewing axis, including thin edge-on surfaces.
     best=max(areas,key=areas.get)
-    if areas[projection_axis]<areas[best]*.9: projection_axis=best
-    for points,face in quads:
+    if view=='icon' and areas[projection_axis]<areas[best]*.9: projection_axis=best
+    for points,face,element_index in quads:
             projected_points=[project(p) for p in points]
             xs,ys = [p[0] for p in projected_points],[p[1] for p in projected_points]
             width,height = round(max(xs)-min(xs)), round(max(ys)-min(ys))
@@ -275,6 +298,34 @@ def render(variant, view='side'):
                 tile = Image.merge('RGBA', tuple(channels[i].point(lambda n, t=tint[i]: n*t//255) for i in range(3))+(channels[3],))
             ux,uy=xs[1]-xs[0],ys[1]-ys[0];vx,vy=xs[3]-xs[0],ys[3]-ys[0];det=ux*vy-uy*vx
             if abs(det)<.01:
+                if view!='icon' and element_areas[element_index][projection_axis]<.01:
+                    # A zero-thickness rail/pane is still visible as a pixel-wide
+                    # edge. Do not replace its valid geometry with a full texture.
+                    points2=list(zip(xs,ys))
+                    start,end=max(((a,b) for i,a in enumerate(points2) for b in points2[i+1:]),key=lambda p:math.dist(*p))
+                    length=math.dist(start,end)
+                    if length>=.5:
+                        steps=max(2,math.ceil(length)+1)
+                        horizontal=ux*ux+uy*uy>=vx*vx+vy*vy
+                        strip=tile.resize((steps,tile.height) if horizontal else (tile.width,steps),Image.Resampling.NEAREST)
+                        pixels=strip.load();profile=[]
+                        for i in range(steps):
+                            pixel=(0,0,0,0)
+                            for j in range(strip.height if horizontal else strip.width):
+                                sample=pixels[i,j] if horizontal else pixels[j,i]
+                                if sample[3]>pixel[3]:pixel=sample
+                                if pixel[3]==255:break
+                            profile.append(pixel)
+                        direction=(ux,uy) if horizontal else (vx,vy)
+                        reverse=direction[0]*(end[0]-start[0])+direction[1]*(end[1]-start[1])<0
+                        projected=Image.new('RGBA',(32,32));draw=ImageDraw.Draw(projected)
+                        for step in range(steps):
+                            t=step/(steps-1);sample=steps-1-step if reverse else step
+                            pixel=profile[sample]
+                            point=tuple(a+(b-a)*t for a,b in zip(start,end))
+                            if pixel[3] and all(-.01<=n<=32.01 for n in point):
+                                draw.point(tuple(max(0,min(31,math.floor(n))) for n in point),fill=pixel)
+                        faces.append((sum(p[2] for p in projected_points)/4,projected))
                 continue
             a1,b1=tile.width*vy/det,-tile.width*vx/det
             d1,e1=-tile.height*uy/det,tile.height*ux/det
@@ -284,7 +335,7 @@ def render(variant, view='side'):
             faces.append((sum(p[2] for p in projected_points)/4,projected))
     for _, tile in sorted(faces, key=lambda q: -q[0]):
         image.alpha_composite(tile)
-    if image.getbbox() is None:
+    if image.getbbox() is None and not quads:
         textures = data.get('textures', {})
         for name in [data.get('textures',{}).get(k,'') for k in ['front','side','all','particle']] + list(textures.values()):
             tex = resolve(name, textures)
@@ -306,7 +357,7 @@ for path in sorted((ASSETS / 'blockstates').glob('*.json')):
         continue
     data = json.loads(resource('blockstates/' + path.name).read_text())
     if name.removesuffix('_banner') in DYE_COLORS and name.endswith('_banner'):
-        data = {'variants': {'': {'model': 'block/board_' + name}}}
+        data = {'variants': {f'rotation={rotation}': {'model': 'block/board_' + name,'y':rotation*22.5} for rotation in range(16)}}
     if name.endswith('copper_chest'):
         texture='copper'+next(('_'+stage for stage in ['exposed','weathered','oxidized'] if stage in name),'')
         data={'variants':{f'facing={facing},type={kind}':{'model':f'block/board_{texture}_chest_{kind}','y':angle} for facing,angle in [('north',0),('east',90),('south',180),('west',270)] for kind in ['single','left','right']}}
@@ -352,7 +403,7 @@ for path in sorted((ASSETS / 'blockstates').glob('*.json')):
     if not visuals:
         candidates = list(variants.values()) or [p['apply'] for p in data.get('multipart',[])]
         if candidates: visuals = [{'when':{},'sprite':render(candidates[0]),'top':render(candidates[0],'top'),'icon':render(candidates[0],'icon')}]
-    if not visuals or not sprite_images[visuals[0]['sprite']].getbbox():
+    if not visuals or not sprite_images[visuals[0]['icon']].getbbox():
         # Flat item sprites cover signs/plants; custom entity-only models use a visible fallback.
         fallback = resolve('item/'+item_alias,{}) or resolve('block/'+name,{})
         if name == 'redstone_wire': fallback = resolve('block/redstone_dust_dot',{})
