@@ -28,7 +28,8 @@ param(
     [ValidatePattern('^[\p{L}\p{N}_-]+$')]
     [string]$PackageName = '投影预览',
     [ValidatePattern('^\d+\.\d+\.\d+(\.\d+)?$')]
-    [string]$Version = '1.1.4'
+    [string]$Version = '1.1.5',
+    [string]$ZipName = 'Litematic-Viewer-1.1.5-win-x64'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -214,7 +215,8 @@ Write-Host ("        {0,-8} {1,8:N1} MB  (sha256 {2})" -f 'exe', ($exeInfo.Lengt
 
 Write-Host "`nReady: $stageDir"
 if (-not $SkipElectron) {
-    $zipPath = Join-Path $distRoot ($PackageName + '-' + $Version + '.zip')
+    $zipFileName = if ($ZipName) { if ($ZipName.EndsWith('.zip', [StringComparison]::OrdinalIgnoreCase)) { $ZipName } else { "$ZipName.zip" } } else { "$PackageName-$Version.zip" }
+    $zipPath = Join-Path $distRoot $zipFileName
     if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     # No wrapper folder: the EXE is an entry at the ZIP's root.

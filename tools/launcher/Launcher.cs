@@ -31,9 +31,9 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("投影预览")]
 [assembly: AssemblyCompany("LiteKinda")]
 [assembly: AssemblyDescription("Minecraft 投影预览")]
-[assembly: AssemblyVersion("1.1.4")]
-[assembly: AssemblyFileVersion("1.1.4")]
-[assembly: AssemblyInformationalVersion("1.1.4")]
+[assembly: AssemblyVersion("1.1.5")]
+[assembly: AssemblyFileVersion("1.1.5")]
+[assembly: AssemblyInformationalVersion("1.1.5")]
 
 internal static class Launcher
 {

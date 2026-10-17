@@ -1,6 +1,6 @@
 {
   "name": "litematic-render-shell",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "productName": "投影预览",
   "private": true,
   "description": "投影预览 — Minecraft Litematica 投影查看与导出",

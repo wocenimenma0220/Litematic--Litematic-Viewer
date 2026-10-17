@@ -165,6 +165,13 @@ public final class RenderEngine implements AutoCloseable {
         var value=new io.github.litematicrender.nbt.NbtCompound().putString("Name",id);var props=new io.github.litematicrender.nbt.NbtCompound();var input=io.github.litematicrender.util.MiniJson.asObject(request.get("states"));if(input!=null){if(input.size()>64)throw new IllegalArgumentException("状态过多");for(var e:input.entrySet()){String text=String.valueOf(e.getValue());if(!e.getKey().matches("[a-z0-9_]+")||!text.matches("[a-z0-9_-]{1,64}"))throw new IllegalArgumentException("无效状态");props.putString(e.getKey(),text);}}return value.put("Properties",props);
     }
     private static int[] editPosition(Object raw){var values=io.github.litematicrender.util.MiniJson.asArray(raw);if(values==null||values.size()!=3)throw new IllegalArgumentException("无效坐标");int[] xyz=new int[3];for(int i=0;i<3;i++){Object value=values.get(i);if(!(value instanceof Number num)||!Double.isFinite(num.doubleValue())||num.doubleValue()!=num.intValue()||Math.abs(num.doubleValue())>30000000)throw new IllegalArgumentException("坐标超出范围");xyz[i]=num.intValue();}return xyz;}
+    private static void checkEditSelection(Object raw,java.util.Collection<io.github.litematicrender.world.Vec3i> positions){
+        if(raw==null)return;var bounds=io.github.litematicrender.util.MiniJson.asObject(raw);if(bounds==null)throw new IllegalArgumentException("无效渲染选区");
+        double[][] limits=new double[2][3];int side=0;
+        for(String name:List.of("min","max")){var values=io.github.litematicrender.util.MiniJson.asArray(bounds.get(name));if(values==null||values.size()!=3)throw new IllegalArgumentException("无效渲染选区");for(int axis=0;axis<3;axis++){if(!(values.get(axis) instanceof Number value)||!Double.isFinite(value.doubleValue()))throw new IllegalArgumentException("无效渲染选区");limits[side][axis]=value.doubleValue();}side++;}
+        for(int axis=0;axis<3;axis++)if(limits[0][axis]>=limits[1][axis])throw new IllegalArgumentException("无效渲染选区");
+        for(var position:positions){int[] p={position.x(),position.y(),position.z()};for(int axis=0;axis<3;axis++)if(p[axis]<limits[0][axis]||p[axis]>=limits[1][axis])throw new IllegalArgumentException("联动修改超出当前渲染选区，请扩大范围后再操作。");}
+    }
     public synchronized Map<String,Object> editBlock(Map<String,Object> request)throws Exception {
         if(schematic==null)throw new IllegalStateException("请先打开投影");
         if(edits==null){edits=new io.github.litematicrender.schematic.ProjectionEdits(schematicPath);editWorkingPath=home.resolve("renders/.edit/current.litematic").toAbsolutePath().normalize();}
@@ -174,7 +181,10 @@ public final class RenderEngine implements AutoCloseable {
             String action=io.github.litematicrender.util.MiniJson.asString(request.get("action"),"set");boolean changed=false;
             if(action.equals("undo"))changed=edits.undo();else if(action.equals("redo"))changed=edits.redo();else if(action.equals("set")){
                 var changes=io.github.litematicrender.util.MiniJson.asArray(request.get("changes"));if(changes==null)changes=List.of(request);if(changes.size()>16)throw new IllegalArgumentException("一次修改方块过多");
-                for(Object raw:changes){var change=io.github.litematicrender.util.MiniJson.asObject(raw);if(change==null)throw new IllegalArgumentException("无效修改");changed|=edits.set(editPosition(change.get("position")),editValue(change));}edits.squash(checkpoint,changed);
+                var requested=new LinkedHashMap<io.github.litematicrender.world.Vec3i,io.github.litematicrender.nbt.NbtCompound>();
+                for(Object raw:changes){var change=io.github.litematicrender.util.MiniJson.asObject(raw);if(change==null)throw new IllegalArgumentException("无效修改");int[] p=editPosition(change.get("position"));requested.put(new io.github.litematicrender.world.Vec3i(p[0],p[1],p[2]),editValue(change));}
+                var planned=io.github.litematicrender.schematic.PistonEdits.plan(edits,requested);checkEditSelection(request.get("selection"),planned.keySet());
+                for(var entry:planned.entrySet()){var p=entry.getKey();changed|=edits.set(new int[]{p.x(),p.y(),p.z()},entry.getValue());}edits.squash(checkpoint,changed);
             }else throw new IllegalArgumentException("未知编辑操作");
             var result=new LinkedHashMap<String,Object>(edits.status());result.put("changed",changed);result.put("path",schematicPath.toAbsolutePath().toString());
             if(changed){schematic=io.github.litematicrender.schematic.LitematicaSchematic.fromData(edits.data());schematic.materialize(registry);editsDirty=true;editRevision++;materialKey=null;result.put("revision",editRevision);result.put("info",editInfo());}

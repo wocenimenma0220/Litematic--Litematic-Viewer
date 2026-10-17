@@ -151,7 +151,7 @@
   async function neighbors(position){return (await window.engine.editStates([[position[0]+1,position[1],position[2]],[position[0]-1,position[1],position[2]],[position[0],position[1]+1,position[2]],[position[0],position[1]-1,position[2]],[position[0],position[1],position[2]+1],[position[0],position[1],position[2]-1]])).blocks;}
   async function mutate(request,message){
     if(busy)return;busy=true;update();const token=session;
-    try{const result=await window.engine.editBlock(request);await refresh(result,token);if(token===session)status(message+(result.changed?'':'（无变化）'));return result;}
+    try{const bounds=state.selection.bounds(selectionWorld()),result=await window.engine.editBlock({...request,selection:bounds||undefined});await refresh(result,token);if(token===session)status(message+(result.changed?'':'（无变化）'));return result;}
     catch(error){if(token===session){status('修改失败：'+error.message);log(info.textContent,'err');}}
     finally{if(token===session){busy=false;update();}}
   }
@@ -163,7 +163,7 @@
     try{hit=await window.engine.editPick({...ray,selection:bounds||undefined});}catch(error){status('拾取失败：'+error.message);return;}finally{if(token===session){busy=false;update();}}
     if(token!==session||!api.enabled)return;
     if(!hit?.hit){status('未指向可编辑方块；部分渲染开启时只拾取选区内部。');return;}
-    if(button===1){const definition=defs.get(hit.id);if(definition){equip(definition);status('已吸取 '+definition.name+'（默认状态）');}else status('此方块未收录到工具箱：'+hit.id);return;}
+    if(button===1){const id=hit.id==='minecraft:piston_head'?'minecraft:'+(hit.states.type==='sticky'?'sticky_piston':'piston'):hit.id,definition=defs.get(id);if(definition){equip(definition);status('已吸取 '+definition.name+'（默认状态）');}else status('此方块未收录到工具箱：'+hit.id);return;}
     if(activeTool==='debug'){
       const definition=defs.get(hit.id);hit.states={...definition?.defaults,...hit.states};const result=stick.interact(hit,button===2,!!event.shiftKey);const message=hit.position.join(', ')+' · '+hit.id+' · '+result.message;
       if(result.changed)await mutate({position:hit.position,id:hit.id,states:result.states},message);else status(message);return;
