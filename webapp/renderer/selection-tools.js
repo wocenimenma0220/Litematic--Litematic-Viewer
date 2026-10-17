@@ -128,7 +128,7 @@ async function prepareSelectionMesh(){
     selected=new GpuView(els.gl);
     if(result.meshTransfer)await selected.uploadMeshStream((offset,length)=>{
       if(!current())throw Error('选区已更新');return window.engine.readSelectionChunk(result.meshTransfer.id,offset,length);
-    },result.meshTransfer.size);
+    },result.meshTransfer.size,undefined,current);
     else selected.uploadMesh(result.meshArrayBuffer);
     selected.uploadAtlas(bitmap);if(!current())return;
     job.view.disposeSelection();job.view.selectionView=selected;job.view.selectionBoundsKey=JSON.stringify(job.bounds);selected=null;job.view.revision++;

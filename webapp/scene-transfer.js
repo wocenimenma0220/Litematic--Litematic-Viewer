@@ -12,7 +12,7 @@ const CHUNK_LIMIT = 8 * 1024 * 1024;
 
 /** One bounded, read-only capability for the current exported scene; never accepts a path from UI. */
 class SceneTransfer {
-  constructor() { this.current = null;this.scenes=new Map();this.decoding=false;this.peakScratchBytes=0; }
+  constructor() { this.current = null;this.scenes=new Map();this.decoding=false;this.peakScratchBytes=0;this.generation=0; }
   async readPage(owner,id,page) {
     if(this.decoding)throw new Error('页面读取队列已满');
     this.decoding=true;
@@ -49,17 +49,22 @@ class SceneTransfer {
       return {data:raw.buffer.slice(raw.byteOffset,raw.byteOffset+raw.byteLength),storedBytes:bytes,decodedBytes:rawBytes,decodeMillis:performance.now()-started,scratchLimitBytes:TRANSFER_SCRATCH_LIMIT,peakScratchBytes:this.peakScratchBytes,cpuCacheBytes:0};
   }
   async close() {
+    ++this.generation;
     const previous = [...this.scenes.values()],pending=this.closing;
     this.current = null;this.scenes.clear();
     this.closing=(async()=>{await pending;while(this.decoding)await new Promise(resolve=>setTimeout(resolve,2));for(const scene of previous)await scene.file.close();})();
     await this.closing;
   }
   async open(path, owner, options={}) {
-    if(!options.retain)await this.close();else if(this.closing)await this.closing;
+    const closing=!options.retain?this.close():this.closing;
+    const generation=this.generation;
+    await closing;
+    if(generation!==this.generation)throw new Error('模型已更新，请重新加载预览。');
     if(this.scenes.size>=2)throw new Error('预览文件数量超限');
     const file = await fs.open(path, 'r');
     try {
       const actual = (await file.stat()).size,size=options.growing?options.committedBytes:actual;
+      if(generation!==this.generation)throw new Error('模型已更新，请重新加载预览。');
       if(!Number.isSafeInteger(size)||size<0||size>actual)throw new Error('无效的已发布模型长度');
       const id = randomUUID();
       this.current = { id, file, size, owner, growing:options.growing===true,key:options.key };

@@ -2,7 +2,7 @@
 
 /** Exposes a narrow, explicit API to the renderer; no Node objects cross the boundary. */
 
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('exportsApi',{
   start:(kind,params)=>ipcRenderer.invoke('exports:start',{kind,params}),
   list:()=>ipcRenderer.invoke('exports:list'),
@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('engine', {
   readScenePages: (id,pages)=>ipcRenderer.invoke('engine:readScenePages',{id,pages}),
   previewDiagnostic: (message) => ipcRenderer.invoke('engine:previewDiagnostic', message),
   cancel: () => ipcRenderer.invoke('engine:cancel'),
+  forceStop: () => ipcRenderer.invoke('engine:forceStop'),
   materials: (request)=>ipcRenderer.invoke('engine:materials',request),
   exportMaterials: (request)=>ipcRenderer.invoke('engine:exportMaterials',request),
   sceneCacheStats: ()=>ipcRenderer.invoke('engine:sceneCacheStats'),
@@ -98,6 +99,7 @@ contextBridge.exposeInMainWorld('skins', {
 });
 
 contextBridge.exposeInMainWorld('shellApi', {
+  droppedFilePath: file => webUtils.getPathForFile(file),
   openSchematic: () => ipcRenderer.invoke('dialog:openSchematic'),
   saveMaterials: (request)=>ipcRenderer.invoke('dialog:saveMaterials',request),
   savePng: (suggested) => ipcRenderer.invoke('dialog:savePng', suggested),

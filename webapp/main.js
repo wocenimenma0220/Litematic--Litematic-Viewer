@@ -15,7 +15,7 @@ const { EngineClient } = require('./engine-client');
 const { resolveRuntime } = require('./runtime');
 const { UiSettings, AUTHOR_URL } = require('./ui-settings');
 const { SceneTransfer, INLINE_LIMIT } = require('./scene-transfer');
-const { clearRenderingCache } = require('./cache-cleanup');
+const { clearRenderingCache,clearInterruptedCache } = require('./cache-cleanup');
 const {BackgroundExports}=require('./background-exports');
 
 /** The project root (…/litematic-render): one level above this file's directory. */
@@ -38,6 +38,7 @@ app.setAppUserModelId('io.kindasus.projectionpreview');
 
 let mainWindow = null;
 let engine = null;
+let renderStopPromise = null;
 let openedSchematic=null,resourceRoot=null;
 const backgroundExports=new BackgroundExports({home:APP_HOME,runtime:resolveRuntime(APP_HOME),onUpdate:job=>{
   if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('exports:update',job);
@@ -80,24 +81,66 @@ function createWindow() {
 /** Starts the Java engine, resolving the bundled runtime first so no system Java is required. */
 function startEngine() {
   const runtime = resolveRuntime(APP_HOME);
-  engine = new EngineClient({
+  const client = new EngineClient({
     javaExe: runtime.javaExe,
     classpath: runtime.classpath,
     home: APP_HOME,
     onEvent: (evt) => {
+      if (engine !== client) return;
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('engine:event', evt);
       }
     },
     onExit: (info) => {
       diagnostic('render engine exited: '+JSON.stringify(info));
+      if (engine !== client || info.forced) return;
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('engine:exit', info);
       }
     },
   });
-  return engine.start();
+  engine = client;
+  return client.start();
 }
+
+function requireCurrentEngine(client) {
+  if (!client || client !== engine || client.stopping || shutdownPromise) throw Error('渲染已强制停止');
+}
+// Capture the engine before any await: an old request must never reach its replacement.
+function handleEngine(channel, handler) {
+  ipcMain.handle(channel, (event, ...args) => {
+    const client = engine;
+    requireCurrentEngine(client);
+    if (renderStopPromise) throw Error('正在停止渲染，请稍候');
+    return handler(client, event, ...args);
+  });
+}
+async function loadEngineResources(client, root) {
+  const imports = await packStore.read();
+  requireCurrentEngine(client);
+  const result = await client.call('loadResources', { ...(root ? { root } : {}), imports });
+  requireCurrentEngine(client);
+  client.resourcesLoaded = true;
+  resourceRoot = root || null;
+  return result;
+}
+
+ipcMain.handle('engine:forceStop', () => {
+  if (renderStopPromise) return renderStopPromise;
+  const previous = engine;
+  const previousPid=previous?.proc?.pid;
+  openedSchematic = null;
+  // Kill first, independently of outstanding RPC calls and file transfers.
+  const stopped = previous ? previous.forceStop() : Promise.resolve();
+  renderStopPromise = (async () => {
+    await Promise.all([stopped, sceneTransfer.close(), selectionTransfer.close()]);
+    try{await clearInterruptedCache(APP_HOME,previousPid,previous?.temporaryCaches);}catch(error){diagnostic('interrupted cache cleanup failed: '+error.message);}
+    if (!shutdownPromise) await startEngine();
+    diagnostic('preview force-stopped; replacement engine ready');
+    return { stopped: true };
+  })().finally(() => { renderStopPromise = null; });
+  return renderStopPromise;
+});
 
 // ---------------------------------------------------------------------------
 // IPC surface
@@ -112,19 +155,20 @@ ipcMain.handle('engine:status', async () => {
   };
 });
 
-ipcMain.handle('engine:ping', () => engine.call('ping', {}));
-ipcMain.handle('engine:selectBlock',(_event,ray)=>engine.call('selectBlock',ray));
-ipcMain.handle('engine:loadResources', async (_e, root) => {
-  const result=await engine.call('loadResources',{...(root?{root}:{}),imports:await packStore.read()});resourceRoot=root||null;return result;
-});
-ipcMain.handle('engine:open', async (_e, file) => {
+handleEngine('engine:ping', client => client.call('ping', {}));
+handleEngine('engine:selectBlock',(client,_event,ray)=>client.call('selectBlock',ray));
+handleEngine('engine:loadResources', (client, _e, root) => loadEngineResources(client, root));
+handleEngine('engine:open', async (client, _e, file) => {
+  if(typeof file!=='string'||path.extname(file).toLowerCase()!=='.litematic'||!(await fs.promises.stat(file)).isFile())throw Error('请选择 .litematic 投影文件');
+  requireCurrentEngine(client);
+  if(!client.resourcesLoaded)await loadEngineResources(client,resourceRoot);
   diagnostic('opening schematic: '+file);
-  try {await sceneTransfer.close();await selectionTransfer.close();await engine.call('cancelPreview',{});const result=await engine.call('open',{path:file});openedSchematic=file;diagnostic('schematic opened: '+file);return result;}
+  try {await sceneTransfer.close();requireCurrentEngine(client);await selectionTransfer.close();await client.call('cancelPreview',{});const result=await client.call('open',{path:file});requireCurrentEngine(client);openedSchematic=file;diagnostic('schematic opened: '+file);return result;}
   catch(error){diagnostic('schematic open failed: '+file+'; '+error.message);throw error;}
 });
-ipcMain.handle('engine:render', async (_e, params) => engine.call('render', await uiSettings.renderParams(params)));
-ipcMain.handle('engine:renderPreview', async (_e, params) => engine.call('renderPreview', await uiSettings.renderParams(params)));
-ipcMain.handle('engine:renderAnimation', async (_e, params) => engine.call('renderAnimation', await uiSettings.renderParams(params)));
+handleEngine('engine:render', async (client, _e, params) => client.call('render', await uiSettings.renderParams(params)));
+handleEngine('engine:renderPreview', async (client, _e, params) => client.call('renderPreview', await uiSettings.renderParams(params)));
+handleEngine('engine:renderAnimation', async (client, _e, params) => client.call('renderAnimation', await uiSettings.renderParams(params)));
 ipcMain.handle('exports:start',async(_event,{kind,params})=>{
   if(!openedSchematic)throw Error('请先打开投影');
   const source=openedSchematic;
@@ -132,12 +176,12 @@ ipcMain.handle('exports:start',async(_event,{kind,params})=>{
 });
 ipcMain.handle('exports:list',()=>backgroundExports.list());
 ipcMain.handle('exports:cancel',(_event,id)=>backgroundExports.cancel(id));
-ipcMain.handle('engine:cancel', () => engine.call('cancel', {}));
-ipcMain.handle('engine:releaseStreaming', async () => {await sceneTransfer.close();await engine.call('cancelPreview',{});return engine.call('releaseStreaming', {});});
-ipcMain.handle('engine:materials',(_event,request)=>engine.call('materials',{waterAsIce:request?.waterAsIce===true}));
-ipcMain.handle('engine:exportMaterials',(_event,request)=>engine.call('exportMaterials',request));
-ipcMain.handle('engine:sceneCacheStats',()=>engine.call('sceneCacheStats',{}));
-ipcMain.handle('engine:configureSceneCache',(_event,request)=>engine.call('configureSceneCache',request));
+handleEngine('engine:cancel', client => client.call('cancel', {}));
+handleEngine('engine:releaseStreaming', async client => {await sceneTransfer.close();await client.call('cancelPreview',{});return client.call('releaseStreaming', {});});
+handleEngine('engine:materials',(client,_event,request)=>client.call('materials',{waterAsIce:request?.waterAsIce===true}));
+handleEngine('engine:exportMaterials',(client,_event,request)=>client.call('exportMaterials',request));
+handleEngine('engine:sceneCacheStats',client=>client.call('sceneCacheStats',{}));
+handleEngine('engine:configureSceneCache',(client,_event,request)=>client.call('configureSceneCache',request));
 ipcMain.handle('dialog:saveMaterials',async(_event,{suggested,format,scope})=>{
   format=format==='csv'?'csv':'xlsx';
   const res=await dialog.showSaveDialog(mainWindow,{defaultPath:suggested||('材料清单.'+format),filters:[{name:format==='csv'?'CSV 表格':'Excel 工作簿',extensions:[format]}]});
@@ -150,7 +194,7 @@ ipcMain.handle('dialog:saveMaterials',async(_event,{suggested,format,scope})=>{
   }
   return file;
 });
-ipcMain.handle('engine:pickBlock', (_e, ray) => engine.call('pickBlock', ray));
+handleEngine('engine:pickBlock', (client, _e, ray) => client.call('pickBlock', ray));
 
 ipcMain.handle('ui:settings', () => uiSettings.settings());
 ipcMain.handle('ui:keybindings',async(_event,bindings)=>{
@@ -213,9 +257,9 @@ ipcMain.handle('window:fullscreen', (_e, enabled) => {
   return { fullscreen };
 });
 
-ipcMain.handle('skins:settings', () => engine.call('skinSettings', {}));
-ipcMain.handle('skins:setOnline', (_event, online) => engine.call('setSkinOnline', { online: !!online }));
-ipcMain.handle('skins:importLocal', async (_event, identity) => {
+handleEngine('skins:settings', client => client.call('skinSettings', {}));
+handleEngine('skins:setOnline', (client, _event, online) => client.call('setSkinOnline', { online: !!online }));
+handleEngine('skins:importLocal', async (client, _event, identity) => {
   if (typeof identity !== 'string' || !/^(?:[A-Za-z0-9_]{1,16}|[0-9a-fA-F]{32}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})$/.test(identity.trim())) {
     throw new Error('请先填写玩家名或 UUID');
   }
@@ -223,7 +267,7 @@ ipcMain.handle('skins:importLocal', async (_event, identity) => {
     title: '导入玩家皮肤 PNG', filters: [{ name: 'Minecraft 皮肤 PNG', extensions: ['png'] }], properties: ['openFile'],
   });
   if (choice.canceled) return { imported: false };
-  return engine.call('importSkin', { identity: identity.trim(), path: choice.filePaths[0] });
+  return client.call('importSkin', { identity: identity.trim(), path: choice.filePaths[0] });
 });
 
 /**
@@ -237,29 +281,30 @@ ipcMain.handle('skins:importLocal', async (_event, identity) => {
 ipcMain.handle('engine:readSceneChunk', (event, request = {}) => sceneTransfer.read(event.sender.id, request.id, request.offset, request.length));
 ipcMain.handle('engine:readSelectionChunk',(event,request={})=>selectionTransfer.read(event.sender.id,request.id,request.offset,request.length));
 ipcMain.handle('engine:releaseSelection',()=>selectionTransfer.close());
-ipcMain.handle('engine:exportSelectionScene',async(event,options={})=>{
-  const dir=path.join(APP_HOME,'renders','.gpu','selection');await fs.promises.mkdir(dir,{recursive:true});await selectionTransfer.close();
-  const result=await engine.call('exportSelectionScene',{selection:options.selection,realLighting:options.realLighting===true,lightingEnabled:options.lightingEnabled!==false,atlas:path.join(dir,'atlas.png'),mesh:path.join(dir,'mesh.bin')});
-  return scenePayload(event,result,{transfer:selectionTransfer});
+handleEngine('engine:exportSelectionScene',async(client,event,options={})=>{
+  const dir=path.join(APP_HOME,'renders','.gpu','selection');await fs.promises.mkdir(dir,{recursive:true});requireCurrentEngine(client);await selectionTransfer.close();
+  const result=await client.call('exportSelectionScene',{selection:options.selection,realLighting:options.realLighting===true,lightingEnabled:options.lightingEnabled!==false,atlas:path.join(dir,'atlas.png'),mesh:path.join(dir,'mesh.bin')});
+  return scenePayload(client,event,result,{transfer:selectionTransfer});
 });
 ipcMain.handle('engine:readScenePage',(event,request={})=>sceneTransfer.readPage(event.sender.id,request.id,request.page));
 ipcMain.handle('engine:readScenePages',(event,request={})=>sceneTransfer.readPages(event.sender.id,request.id,request.pages));
-ipcMain.handle('engine:beginPreview',async (_event,options={})=>{await sceneTransfer.close();return engine.call('beginPreview',options);});
-ipcMain.handle('engine:previewStatus',async(event,request)=>{
+handleEngine('engine:beginPreview',async (client,_event,options={})=>{await sceneTransfer.close();return client.call('beginPreview',options);});
+handleEngine('engine:previewStatus',async(client,event,request)=>{
   const query=typeof request==='string'?{id:request}:request;
-  const status=await engine.call('previewStatus',query);sceneTransfer.commit(event.sender.id,query.id,status.committedBytes);return status;
+  const status=await client.call('previewStatus',query);requireCurrentEngine(client);sceneTransfer.commit(event.sender.id,query.id,status.committedBytes);return status;
 });
-ipcMain.handle('engine:previewLive',async(event,id)=>scenePayload(event,await engine.call('previewLive',{id}),{retain:true,growing:true,key:id}));
-ipcMain.handle('engine:cancelPreview',async()=>{await sceneTransfer.close();return engine.call('cancelPreview',{});});
-ipcMain.handle('engine:previewResult',async(event,request)=>scenePayload(event,await engine.call('previewResult',request)));
-ipcMain.handle('engine:previewComplete',(_event,id)=>engine.call('previewResult',{id,overview:false}));
-ipcMain.handle('engine:exportScene', async (event, options = {}) => {
+handleEngine('engine:previewLive',async(client,event,id)=>scenePayload(client,event,await client.call('previewLive',{id}),{retain:true,growing:true,key:id}));
+handleEngine('engine:cancelPreview',async client=>{await sceneTransfer.close();return client.call('cancelPreview',{});});
+handleEngine('engine:previewResult',async(client,event,request)=>scenePayload(client,event,await client.call('previewResult',request)));
+handleEngine('engine:previewComplete',(client,_event,id)=>client.call('previewResult',{id,overview:false}));
+handleEngine('engine:exportScene', async (client, event, options = {}) => {
   const dir = path.join(APP_HOME, 'renders', '.gpu');
   await fs.promises.mkdir(dir, { recursive: true });
+  requireCurrentEngine(client);
   await sceneTransfer.close();
   diagnostic('building preview scene');
-  await engine.call('cancelPreview',{});
-  const res = await engine.call(options.streaming===true?'exportCachedScene':'exportScene', {
+  await client.call('cancelPreview',{});
+  const res = await client.call(options.streaming===true?'exportCachedScene':'exportScene', {
     atlas: path.join(dir, 'atlas.png'),
     mesh: path.join(dir, 'mesh.bin'),
     force: options.force === true,
@@ -267,11 +312,13 @@ ipcMain.handle('engine:exportScene', async (event, options = {}) => {
     lightingEnabled: options.lightingEnabled !== false,
     streaming: options.streaming === true,
   });
-  return scenePayload(event,res);
+  return scenePayload(client,event,res);
 });
-async function scenePayload(event,res,options={}) {
+async function scenePayload(client,event,res,options={}) {
+  requireCurrentEngine(client);
   const atlasBuffer = await fs.promises.readFile(res.atlas);
   const meshBytes = (await fs.promises.stat(res.mesh)).size;
+  requireCurrentEngine(client);
   diagnostic(options.growing?'progressive detail stream opened: '+res.committedBytes+' committed bytes':'scene exported: ' + meshBytes + ' bytes, ' + res.quads + ' faces');
   let payload;
   if (['LMESH5','LMESH6','LMESH7'].includes(res.meshFormat) || meshBytes > INLINE_LIMIT) {
@@ -281,6 +328,7 @@ async function scenePayload(event,res,options={}) {
     const meshBuffer = await fs.promises.readFile(res.mesh);
     payload = { meshArrayBuffer: meshBuffer.buffer.slice(meshBuffer.byteOffset, meshBuffer.byteOffset + meshBuffer.byteLength) };
   }
+  requireCurrentEngine(client);
   return {
     ...res,
     ...payload,
@@ -462,6 +510,7 @@ app.on('before-quit', event => {
       await sceneTransfer.close();
       await selectionTransfer.close();
       await backgroundExports.close();
+      if(renderStopPromise)await renderStopPromise.catch(()=>{});
       if(engine)await engine.stop();
       await uiSettings.queue;
       if((await uiSettings.read()).clearCacheOnExit){await clearRenderingCache(APP_HOME);diagnostic('render cache cleared on exit');}

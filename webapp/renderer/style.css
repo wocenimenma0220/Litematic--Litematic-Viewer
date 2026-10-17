@@ -872,6 +872,55 @@ button.primary:active:not(:disabled) {
   white-space: nowrap;
 }
 
+.stop-render:not(:disabled) {
+  color: #fda4af;
+  border-color: rgba(244, 63, 94, .25);
+  background: rgba(244, 63, 94, .08);
+}
+
+.stop-render:not(:disabled):hover {
+  border-color: rgba(244, 63, 94, .5);
+  background: rgba(244, 63, 94, .16);
+}
+
+.stop-render span { font-size: 9px; margin-right: 4px; }
+
+.file-drop-hint {
+  position: fixed;
+  top: 50px;
+  left: 16px;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 16px 20px;
+  border: 1px solid var(--line-accent);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(135deg, #17243b, var(--bg-titlebar));
+  box-shadow: var(--shadow-lg), 0 0 28px rgba(59, 130, 246, .1);
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+  animation: drop-hint-in .14s ease-out;
+}
+
+.file-drop-icon {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: var(--radius-lg);
+  background: var(--accent-dim);
+  color: var(--accent-hover);
+  font-size: 24px;
+}
+
+.file-drop-hint strong { color: var(--text-main); font-size: 13px; font-weight: 600; }
+.file-drop-hint p { color: var(--text-secondary); font-size: 11px; margin: 5px 0 0; }
+@keyframes drop-hint-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .file-drop-hint { animation: none; } }
+
 #bgMode {
   width: auto;
   padding: 4px 26px 4px 8px;

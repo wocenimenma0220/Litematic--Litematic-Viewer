@@ -19,7 +19,7 @@ final class SceneCache {
         try{var data=MiniJson.parseObject(Files.readString(settings));long value=((Number)data.get("limitBytes")).longValue();if(value==0||value>=256L*1024*1024&&value<=131072L*1024*1024)limit=value;}catch(Exception ignored){}
         prune();
     }
-    Path begin()throws IOException{return Files.createTempDirectory(root,".work-");}
+    Path begin()throws IOException{return Files.createTempDirectory(root,".work-"+ProcessHandle.current().pid()+"-");}
     void protect(Path path){Path previous=protectedDirectory;protectedDirectory=path==null?null:path.toAbsolutePath().normalize();if(previous!=null&&!previous.equals(protectedDirectory)&&previous.getFileName().toString().startsWith(".work-"))try{discard(previous);}catch(IOException ignored){}}
     @SuppressWarnings("unchecked") Entry load(String key) {
         if(limit==0)return null;Path directory=directory(key);Path manifest=directory.resolve("manifest.json");

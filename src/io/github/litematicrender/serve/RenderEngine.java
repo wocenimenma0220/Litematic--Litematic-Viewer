@@ -597,7 +597,7 @@ public final class RenderEngine implements AutoCloseable {
                 if(job.cancelled)throw new java.util.concurrent.CancellationException();
                 var result=exportCachedStreamScene(force,realLighting,lightingEnabled,()->{
                     if(job.cancelled)throw new java.util.concurrent.CancellationException();job.stage="overview-building";long started=System.currentTimeMillis();
-                    Path root=home.resolve("cache/previews");Files.createDirectories(root);if(!root.toRealPath().startsWith(home.toRealPath()))throw new IOException("临时总览路径不在软件目录内");prunePreviews(root);job.directory=Files.createTempDirectory(root,"preview-");
+                    Path root=home.resolve("cache/previews");Files.createDirectories(root);if(!root.toRealPath().startsWith(home.toRealPath()))throw new IOException("临时总览路径不在软件目录内");prunePreviews(root);job.directory=Files.createTempDirectory(root,"preview-"+ProcessHandle.current().pid()+"-");
                     var overview=new io.github.litematicrender.render.scene.OverviewMesh(schematic,baker,atlas);var colorAtlas=SpriteAtlas.overview();
                     Path mesh=job.directory.resolve("mesh.lmesh"),png=job.directory.resolve("atlas.png");var index=StreamMeshExporter.write(overview,colorAtlas,mesh);colorAtlas.stitched.writePng(png);
                     if(job.cancelled)throw new java.util.concurrent.CancellationException();var b=overview.bounds();var metadata=new LinkedHashMap<String,Object>();

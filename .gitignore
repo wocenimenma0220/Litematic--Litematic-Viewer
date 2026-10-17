@@ -63,6 +63,9 @@ assets/builtin/*.zip
 *.tmp
 .vscode/
 .idea/
+*.iml
+__pycache__/
+tools/verify/board-ui*.png
 archive/
 packs/
 logs/

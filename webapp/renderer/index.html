@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'none'; img-src 'self' data: file:; style-src 'self'; script-src 'self'; connect-src 'self' file:;" />
+        content="default-src 'none'; img-src 'self' data: file:; media-src 'self' file:; style-src 'self'; script-src 'self'; connect-src 'self' file:;" />
   <title>投影预览</title>
   <link rel="icon" href="../icon.png" />
   <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="board.css" />
 </head>
 <body>
   <div class="titlebar">
@@ -16,6 +17,7 @@
       <button class="menubtn" id="menuFile">文件</button>
       <button class="menubtn" id="menuKeys">按键</button>
       <button class="menubtn" id="menuCommands">指令</button>
+      <button class="menubtn" id="menuBoard">二维搭建</button>
       <div class="dropdown hidden" id="menuFileDrop">
         <button id="menuOpenSchematic">打开投影 (.litematic)…</button>
         <button id="menuImportPack">导入材质包…</button>
@@ -28,6 +30,11 @@
         <button id="menuQuit">退出</button>
       </div>
     </nav>
+  </div>
+
+  <div id="fileDropHint" class="file-drop-hint hidden" role="status" aria-live="polite">
+    <span class="file-drop-icon" aria-hidden="true">↓</span>
+    <div><strong>松开以打开投影</strong><p id="fileDropMessage">拖入一个 .litematic 文件</p></div>
   </div>
 
   <div class="app">
@@ -208,6 +215,7 @@
       <div class="toolbar">
         <span id="stats" class="muted small">—</span>
         <span class="spacer"></span>
+        <button id="btnStopRender" class="toolbar-button stop-render" title="强制停止当前预览；拖入新投影时会自动停止当前任务" disabled><span aria-hidden="true">■</span> 停止渲染</button>
         <label class="check small">
           背景
           <select id="bgMode">
@@ -275,6 +283,17 @@
   </dialog>
   <dialog id="shortcutDialog" class="shortcut-dialog"><div class="dialog-title"><h2>自定义按键</h2><button id="closeShortcuts" type="button">关闭</button></div><p class="muted small">点击右侧绑定，再按新键。左右 Shift、Ctrl、Alt 视为同一键；鼠标键也可绑定。</p><div id="shortcutRows"></div><p id="shortcutFeedback" class="muted small" aria-live="polite"></p><button id="cancelBinding" class="hidden" type="button">取消本次绑定</button><button id="resetShortcuts" type="button">恢复默认按键</button><p class="muted small">视角：拖动鼠标旋转，滚轮缩放；漫游：移动鼠标转向。微调：按住设置的修饰键并滚动滚轮。</p></dialog>
   <dialog id="commandsDialog" class="shortcut-dialog"><div class="dialog-title"><h2>支持的指令</h2><button id="closeCommands" type="button">关闭</button></div><p class="muted small">选择工具开启后可设置角点；坐标按投影自身坐标输入，支持负数。省略坐标时选取准星所指方块，漫游中未指向方块时使用当前位置。</p><div id="commandRows"></div><button id="commandsInput" type="button">打开指令输入</button></dialog>
+  <dialog id="boardViewDialog" class="board-view-dialog" aria-label="选择视角"><div class="dialog-title"><h2>二维搭建</h2><button id="boardViewCancel">取消</button></div><div class="board-view-choices"><button id="boardViewSide">侧视</button><button id="boardViewTop">俯视</button></div></dialog>
+  <dialog id="boardDialog" class="board-dialog" aria-label="二维方块搭建">
+    <header class="board-header"><button id="boardClose">← 返回</button><h2 id="boardTitle">二维搭建</h2><span class="board-spacer"></span><button id="boardUndo">撤销</button><button id="boardRedo">重做</button><button id="boardPause" aria-pressed="false">暂停水流</button><button id="boardHome">归位</button><button id="boardSave">保存</button><button id="boardLoad">打开</button><input id="boardFile" type="file" accept=".json" hidden /></header>
+    <div class="board-stage" id="boardStage"><canvas id="boardCanvas" tabindex="0" aria-label="二维网格画布"></canvas></div>
+    <section class="board-tools"><div class="board-tools-top"><strong id="boardSelected">选择方块</strong><button id="boardBrush" aria-pressed="true">放置</button><button id="boardEraser" aria-pressed="false">橡皮擦</button><input id="boardSearch" type="search" placeholder="搜索方块名称 / ID" aria-label="搜索方块" /></div><div id="boardState" class="board-state"></div><nav id="boardTabs" class="board-tabs" aria-label="方块分类"></nav><div id="boardPalette" class="board-palette" aria-label="方块工具栏"></div><div id="boardStatus" class="board-status" role="status"></div></section>
+  </dialog>
+  <script src="board-catalog.js"></script>
+  <script src="board-world.js"></script>
+  <script src="board-sounds.js"></script>
+  <script src="board-audio.js"></script>
+  <script src="board.js"></script>
   <script src="keyboard-shortcuts.js"></script>
   <script src="render-selection.js"></script>
   <script src="gpu-view.js"></script>

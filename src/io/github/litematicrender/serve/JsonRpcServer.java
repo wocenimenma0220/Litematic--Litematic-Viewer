@@ -60,7 +60,9 @@ public final class JsonRpcServer {
     /** Reads requests until EOF or a {@code shutdown} call. */
     public void run() {
         emit(Map.of("event", "ready", "pid", ProcessHandle.current().pid(),
-            "home", this.engine.home().toString()));
+            "home", this.engine.home().toString(), "temporaryCaches", Map.of(
+                "scenes", System.getProperty("litematicrender.cache.directory", this.engine.home().resolve("cache/scenes").toString()),
+                "previews", this.engine.home().resolve("cache/previews").toString())));
         String line;
         try {
             while ((line = this.in.readLine()) != null) {

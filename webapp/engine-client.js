@@ -38,6 +38,8 @@ class EngineClient {
 
   start() {
     this.stopping = null;
+    this.forced = false;
+    this.stderrTail = [];
     return new Promise((resolve, reject) => {
       const args = [
         `-Xmx${memoryPolicy().heapMB}m`,
@@ -63,10 +65,11 @@ class EngineClient {
       // Chinese pack names, for instance — into replacement characters before JSON.parse sees it.
       child.stdout.setEncoding('utf8');
       const rl = readline.createInterface({ input: child.stdout });
-      rl.on('line', (line) => this._onLine(line));
+      rl.on('line', (line) => { if (this.proc === child && !this.forced) this._onLine(line); });
 
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk) => {
+        if (this.proc !== child || this.forced) return;
         // Keep a bounded tail for diagnostics; the engine logs resolution failures here.
         for (const l of String(chunk).split(/\r?\n/)) {
           if (!l.trim()) continue;
@@ -83,10 +86,13 @@ class EngineClient {
       });
 
       child.on('exit', (code, signal) => {
+        if (this.proc !== child) return;
         this.proc = null;
-        const info = { code, signal, stderrTail: this.stderrTail.slice(-40) };
+        const info = { code, signal, forced: this.forced, stderrTail: this.stderrTail.slice(-40) };
         this._failAll(new Error(`render engine exited (code=${code} signal=${signal})`));
         if (this.opts.onExit) this.opts.onExit(info);
+        cleanup();
+        reject(new Error('渲染引擎在启动完成前退出'));
       });
 
       // The engine announces readiness itself once stdin is being read.
@@ -117,6 +123,7 @@ class EngineClient {
       return;
     }
     if (msg.event === 'ready') {
+      this.temporaryCaches = msg.temporaryCaches;
       if (this._readyHook) this._readyHook(msg);
       if (this.opts.onEvent) this.opts.onEvent(msg);
       return;
@@ -133,13 +140,14 @@ class EngineClient {
   }
 
   _failAll(err) {
+    for (const job of this.queue.splice(0)) job.reject(err);
     for (const [, entry] of this.pending) entry.reject(err);
     this.pending.clear();
   }
 
   /** Queues a call; resolves with the engine's result object. */
   call(method, params) {
-    if(this.stopping)return Promise.reject(new Error('应用正在退出'));
+    if(this.stopping)return Promise.reject(new Error(this.forced ? '渲染已强制停止' : '应用正在退出'));
     return new Promise((resolve, reject) => {
       this.queue.push({ method, params, resolve, reject });
       this._pump();
@@ -190,6 +198,20 @@ class EngineClient {
         proc.stdin.end(JSON.stringify({ id: 0, method: 'shutdown', params: {} }) + '\n');
       } catch { try { proc.kill(); } catch { /* already gone */ } }
     });
+    return this.stopping;
+  }
+
+  /** Out-of-band cancellation: a blocked RPC reader cannot process a queued cancel request. */
+  forceStop() {
+    if (this.stopping) return this.stopping;
+    const proc = this.proc;
+    this.forced = true;
+    this.stopping = new Promise((resolve, reject) => {
+      if (!proc || proc.exitCode !== null || proc.signalCode !== null) { resolve(); return; }
+      proc.once('exit', resolve);
+      try { proc.kill('SIGKILL'); } catch (error) { reject(error); }
+    });
+    this._failAll(new Error('渲染已强制停止'));
     return this.stopping;
   }
 

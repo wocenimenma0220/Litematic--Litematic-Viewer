@@ -334,13 +334,17 @@ class GpuView {
   }
 
   /** Read large scenes in bounded batches; never retain the entire wire-format file. */
-  async uploadMeshStream(read, byteLength, progress = () => {}) {
+  async uploadMeshStream(read, byteLength, progress = () => {}, isCurrent = () => true) {
     const gl=this.gl, batchQuads=32768;
+    let generation=this.uploadGeneration;
+    const current=()=>!this.destroyed&&generation===this.uploadGeneration&&isCurrent();
     const bytes=async(offset,length)=>{
+      if(!current())throw new Error('预览任务已更新');
       if(!Number.isSafeInteger(length)||length<0||offset+length>byteLength)throw new Error('模型文件不完整。');
       const result=new Uint8Array(length);
       for(let at=0;at<length;at+=8*1024*1024) {
         const count=Math.min(8*1024*1024,length-at),part=await read(offset+at,count);
+        if(!current())throw new Error('预览任务已更新');
         if(part.byteLength!==count)throw new Error('模型分块长度不正确。');
         result.set(new Uint8Array(part),at);
       }
@@ -362,7 +366,7 @@ class GpuView {
     }
     if(total*fileCorners!==totalVertices)throw new Error('模型顶点总数不正确。');
     const metadataOffset=offset;
-    this.disposeBuffers();this.uintIndices=!!gl.getExtension('OES_element_index_uint');
+    this.disposeBuffers();generation=this.uploadGeneration;this.uintIndices=!!gl.getExtension('OES_element_index_uint');
     const layers=[],lo=[Infinity,Infinity,Infinity],hi=[-Infinity,-Infinity,-Infinity];
     let blendData=blendQuads?new Float32Array(blendQuads*36):null,blendAt=0,loaded=0;
     const checkUpload=()=>{
@@ -435,7 +439,7 @@ class GpuView {
         this.sectionGraph=makeSectionGraph(sections,lo,hi,layers);
       } else if(offset!==byteLength)throw new Error('模型文件尾部不正确。');
       return {layers:layerCount,quads:total,totalVertices,min:lo,max:hi,center:this.center,radius:this.radius};
-    } catch(error) {this.disposeBuffers();throw error;}
+    } catch(error) {if(current())this.disposeBuffers();throw error;}
   }
 
   /** World-space look direction, opposite the third ROW of the view rotation. */

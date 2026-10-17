@@ -53,6 +53,7 @@ const els = {
   log: $('log'),
   stats: $('stats'),
   bgMode: $('bgMode'),
+  stopRender: $('btnStopRender'), fileDropHint: $('fileDropHint'), fileDropMessage: $('fileDropMessage'),
   sidebar: $('sidebar'),
   sidebarPanel: $('sidebarPanel'),
   toggleSidebar: $('btnToggleSidebar'),
@@ -85,6 +86,7 @@ const state = {
   lastResult: null,
   previewGeneration: 0,
   rendering: false,
+  stopping: false, stopped: false, fileOpening: false, engineNeedsOpen: false,
   zoom: 1,
   packs: [],
   /** WebGL viewer; once ready, camera changes never reach the JVM. */
@@ -137,6 +139,7 @@ function setStatus(text, cls) {
 }
 
 function setBusy(on, text) {
+  if(!on&&(state.stopping||state.fileOpening)){updateButtons();return;}
   state.rendering = on;
   els.busy.classList.toggle('hidden', !on);
   if (text) els.busyText.textContent = text;
@@ -145,9 +148,12 @@ function setBusy(on, text) {
 }
 
 function updateButtons() {
-  const busy=state.rendering||state.scenePreparing;
-  const ready = !!state.file && !busy;
-  els.render.disabled = !ready;
+  const busy=state.rendering||state.scenePreparing||state.stopping;
+  const ready = !!state.file && !busy && !state.engineNeedsOpen;
+  els.render.disabled = !state.file || busy;
+  els.stopRender.disabled=state.stopping||!state.file||!(busy||state.viewReady||state.cpuPreviewReady||cpuPreviewRunning);
+  els.stopRender.lastChild.textContent=state.stopping?' 停止中…':' 停止渲染';
+  els.open.disabled=state.fileOpening||state.stopping;
   els.materials.disabled=els.menuMaterials.disabled=!ready;
   els.export.disabled = !ready;
   els.exportGif.disabled = !ready;
@@ -217,7 +223,7 @@ function invalidateCpuPreview() {
   lastCpuPreviewKey=null;
 }
 function requestPreview(interactive, options = {}) {
-  if (!state.file) return Promise.resolve(null);
+  if (!state.file || state.stopping || state.stopped || state.engineNeedsOpen) return Promise.resolve(null);
   if(!state.cpuPreview&&state.previewBackend!=='cpu'){if(state.viewReady)drawView();return Promise.resolve(null);}
   if (state.viewReady && !state.cpuPreview) { drawView(); return Promise.resolve(null); }
   const generation = ++state.previewGeneration;
@@ -300,6 +306,8 @@ function updateProgressiveStatus(stats){
   setStatus(stats.running?'模型准备完成，正在载入当前视角…':stats.budgetLimited?'已显示当前预算内的细节，可调整视角或提高缓存上限。':'3D 视图已就绪。',stats.running||stats.budgetLimited?'':'ok');
 }
 async function buildView(options = {}) {
+  if(state.stopping)return;
+  if(state.engineNeedsOpen){await loadFile(state.file);return;}
   if(typeof invalidateSelectionMesh==='function')invalidateSelectionMesh();
   resolveProjectionMode();
   const generation=++gpuBuildGeneration;
@@ -314,10 +322,14 @@ async function buildView(options = {}) {
     if(typeof updateSelectionUi==='function')updateSelectionUi();
     if(state.view){state.view.disposeBuffers();if(state.view.texture)state.view.gl.deleteTexture(state.view.texture);state.view.texture=null;}
     els.gl.classList.add('hidden');els.crosshair.classList.add('hidden');updatePreviewBackend();
-    await window.engine.releaseStreaming();els.streamInfo.textContent='';
-    els.preloadInfo.textContent='预渲染用于 GPU 分块预览。';
-    const result=await requestPreview(false,{force:options.force===true});
-    if(result)log(`CPU 预览就绪：${result.width}×${result.height}，渲染 ${result.renderMillis} ms。`,'ok');
+    try {
+      await window.engine.releaseStreaming();if(generation!==gpuBuildGeneration)return;els.streamInfo.textContent='';
+      els.preloadInfo.textContent='预渲染用于 GPU 分块预览。';
+      const result=await requestPreview(false,{force:options.force===true});
+      if(result)log(`CPU 预览就绪：${result.width}×${result.height}，渲染 ${result.renderMillis} ms。`,'ok');
+    } catch(error) {
+      if(generation===gpuBuildGeneration){log('CPU 预览失败：'+error.message,'err');setBusy(false);}
+    }
     return;
   }
   state.cpuPreview=false;state.cpuPreviewReady=false;updatePreviewBackend();
@@ -326,6 +338,7 @@ async function buildView(options = {}) {
   try {
     if(state.largeProjection) {
       const job=await window.engine.beginPreview({force:options.force===true,realLighting:els.realLighting.checked,lightingEnabled:els.lightingEnabled.checked});
+      if(generation!==gpuBuildGeneration)return;
       state.scenePreparing=true;state.previewJobId=job.id;updateButtons();let shown=false,live=false,sequence=0,lastPriority='',lastPriorityAt=0;
       while(generation===gpuBuildGeneration) {
         const query={after:sequence},priority=previewViewPriority(),priorityKey=JSON.stringify(priority);
@@ -440,12 +453,13 @@ async function applyGpuScene(res,options={}) {
             updateProgressiveStatus(stats);
             if(state.viewReady)scheduleStreamView();
           },
-          onError:error=>log('分块载入失败：'+error.message,'err'),
+          onError:error=>{if(isCurrent())log('分块载入失败：'+error.message,'err');},
         })
       : streamed
       ? await state.view.uploadMeshStream((offset,length)=>window.engine.readSceneChunk(res.meshTransfer.id,offset,length),res.meshTransfer.size,
-        (loaded,total)=>{els.busyText.textContent=`载入大投影… ${Math.floor(loaded/Math.max(1,total)*100)}%`;})
+        (loaded,total)=>{if(isCurrent())els.busyText.textContent=`载入大投影… ${Math.floor(loaded/Math.max(1,total)*100)}%`;},isCurrent)
       : state.view.uploadMesh(res.meshArrayBuffer);
+    if(!isCurrent()){atlasImage.close();throw Error('预览任务已更新');}
     state.view.setFrameBounds(res.min,res.max);
     if(!['LMESH5','LMESH6','LMESH7'].includes(res.meshFormat)){els.streamInfo.textContent='完整模型已载入';$('pageReadInfo').textContent='';}
     state.view.uploadAtlas(atlasImage);
@@ -572,6 +586,7 @@ function scheduleStreamView() {
 
 /** Reuse the displayed frame while idle; restore native resolution after motion ends. */
 function drawView(interactive = false) {
+  if(state.stopping||state.stopped||state.fileOpening)return;
   updateCoordinates();
   if(state.cpuPreview) {
     if(!state.cpuPreviewReady)return;
@@ -1146,11 +1161,94 @@ async function openSchematic() {
 }
 
 let fileOpenGeneration=0;
+let stopRenderPromise=null;
+function hasActiveRender() {
+  return state.rendering||state.scenePreparing||state.fileOpening||cpuPreviewRunning||state.view?.stream?.running
+    ||(typeof selectionMeshRunning!=='undefined'&&selectionMeshRunning);
+}
+function discardPreview() {
+  ++gpuBuildGeneration;
+  invalidateCpuPreview();
+  if(typeof invalidateSelectionMesh==='function')invalidateSelectionMesh();
+  if(state.fly)setFly(false);
+  state.keys.clear();closeInspector();
+  clearTimeout(refineTimer);clearTimeout(streamViewTimer);streamViewTimer=0;
+  if(viewFrame){cancelAnimationFrame(viewFrame);viewFrame=0;}
+  state.scenePreparing=false;state.overview=false;state.livePreview=false;state.previewJobId=null;
+  state.viewReady=false;state.cpuPreviewReady=false;
+  if(typeof updateSelectionUi==='function')updateSelectionUi();
+  if(state.view)state.view.disposeBuffers();
+  els.gl.classList.add('hidden');els.preview.classList.add('hidden');els.crosshair.classList.add('hidden');
+  els.placeholder.classList.remove('hidden');
+  els.streamInfo.textContent='';els.stats.textContent='—';
+}
+function stopRendering() {
+  if(stopRenderPromise)return stopRenderPromise;
+  const stopping=++fileOpenGeneration;
+  state.stopping=true;state.stopped=true;state.fileOpening=false;state.engineNeedsOpen=!!state.file;
+  discardPreview();
+  els.placeholder.textContent='渲染已停止，点击「重新渲染」继续';
+  setBusy(true,'正在强制停止渲染…');
+  // Startup resources have no schematic yet; cancelling a pending open need not kill initialization.
+  stopRenderPromise=(async()=>{
+    if(state.resourcesLoaded)await window.engine.forceStop();
+    log('已强制停止当前预览。');
+    if(stopping===fileOpenGeneration)setStatus('渲染已停止，可重新渲染或拖入新投影。','');
+  })().catch(error=>{
+    log('停止渲染失败：'+error.message,'err');
+    throw error;
+  }).finally(()=>{
+    stopRenderPromise=null;state.stopping=false;
+    if(stopping===fileOpenGeneration){state.fileOpening=false;setBusy(false);}
+    updateButtons();
+  });
+  return stopRenderPromise;
+}
+els.stopRender.addEventListener('click',()=>{stopRendering().catch(()=>{});});
+
+let fileDragDepth=0;
+function hideFileDropHint(){fileDragDepth=0;els.fileDropHint.classList.add('hidden');}
+function isFileDrag(event){return Array.from(event.dataTransfer?.types||[]).includes('Files');}
+window.addEventListener('dragenter',event=>{
+  if(!isFileDrag(event))return;
+  event.preventDefault();fileDragDepth++;
+  els.fileDropMessage.textContent=hasActiveRender()||state.stopping
+    ?'将停止当前渲染，并打开新的 .litematic 投影'
+    :'拖入一个 .litematic 文件，即可开始预览';
+  els.fileDropHint.classList.remove('hidden');
+});
+window.addEventListener('dragover',event=>{
+  event.preventDefault();
+  if(isFileDrag(event))event.dataTransfer.dropEffect='copy';
+});
+window.addEventListener('dragleave',event=>{
+  if(!isFileDrag(event)&&fileDragDepth===0)return;
+  if(--fileDragDepth<=0)hideFileDropHint();
+});
+window.addEventListener('dragend',hideFileDropHint);
+window.addEventListener('blur',hideFileDropHint);
+window.addEventListener('drop',event=>{
+  event.preventDefault();hideFileDropHint();
+  const files=Array.from(event.dataTransfer?.files||[]);
+  if(!files.length)return;
+  if(files.length!==1||!files[0].name.toLowerCase().endsWith('.litematic')){
+    log('请每次拖入一个 .litematic 投影文件。','err');return;
+  }
+  try{
+    const file=window.shellApi.droppedFilePath(files[0]);
+    if(!file){log('无法读取拖入文件的路径，请从文件夹拖入投影。','err');return;}
+    loadFile(file);
+  }catch(error){log('拖入文件失败：'+error.message,'err');}
+});
+
 async function loadFile(file) {
+  const recovery=hasActiveRender()||state.stopping?stopRendering():Promise.resolve();
   const opening=++fileOpenGeneration;
-  ++gpuBuildGeneration;state.scenePreparing=false;state.overview=false;state.viewReady=false;
-  if(state.view?.stream)state.view.disposeBuffers();
-  closeInspector();
+  discardPreview();
+  state.file=file;state.info=null;state.fileOpening=true;state.engineNeedsOpen=true;
+  els.fileInfo.classList.add('hidden');
+  els.placeholder.textContent='正在打开投影…';
+  setStatus('正在打开投影…','');
   els.open.disabled = true;
   setBusy(true, '读取投影…');
   // Frame each new build from a known state; a leftover zoom would open the file mid-detail.
@@ -1158,6 +1256,7 @@ async function loadFile(file) {
   els.zoom.value = '1';
   syncAngleLabels();
   try {
+    await recovery;
     await window.__resourcesReady;
     if(!state.resourcesLoaded)throw Error('资源初始化未完成，请检查启动日志。');
     if(opening!==fileOpenGeneration)return;
@@ -1165,6 +1264,7 @@ async function loadFile(file) {
     if(opening!==fileOpenGeneration)return;
     state.file = file;
     state.info = info;
+    state.engineNeedsOpen=false;state.stopped=false;state.fileOpening=false;
     if(state.selection){state.selection.reset();selectionSession++;}
     showFileInfo(info);
     log(`已打开 ${info.name}（${info.regions.length} 个区域，${info.totalBlocks} 方块）`, 'ok');
@@ -1174,9 +1274,11 @@ async function loadFile(file) {
   } catch (err) {
     if(opening!==fileOpenGeneration)return;
     log('打开失败：' + err.message, 'err');
+    state.fileOpening=false;state.stopped=true;
+    els.placeholder.textContent='打开失败，请重新选择投影或点击「重新渲染」重试';
     setBusy(false);
   } finally {
-    if(opening===fileOpenGeneration){els.open.disabled = false;updateButtons();}
+    if(opening===fileOpenGeneration){state.fileOpening=false;updateButtons();}
   }
 }
 
