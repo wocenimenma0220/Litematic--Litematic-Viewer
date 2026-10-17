@@ -11,6 +11,14 @@
   let screenWidth=1,screenHeight=1;
   const status=text=>$('boardStatus').textContent=text;
   const audio=new BoardAudio(window.BoardSounds,{onError:()=>status('音效播放失败。')});
+  const tools=$('boardTools'),toolsHandle=$('boardToolsHandle');
+  let toolsExpanded=false,toolsDrag=null,suppressToolsClick=false;
+  function expandTools(expanded){toolsExpanded=expanded;tools.classList.toggle('is-expanded',expanded);toolsHandle.setAttribute('aria-expanded',String(expanded));toolsHandle.setAttribute('aria-label',expanded?'收起方块工具栏':'展开方块工具栏');dirty=true;}
+  toolsHandle.addEventListener('pointerdown',event=>{if(event.button!==0)return;event.preventDefault();suppressToolsClick=false;toolsDrag={id:event.pointerId,y:event.clientY,expanded:toolsExpanded,moved:false};toolsHandle.setPointerCapture(event.pointerId);});
+  toolsHandle.addEventListener('pointermove',event=>{if(toolsDrag?.id!==event.pointerId)return;const delta=event.clientY-toolsDrag.y;if(Math.abs(delta)>10){toolsDrag.moved=true;expandTools(delta<0);}});
+  toolsHandle.addEventListener('pointerup',event=>{if(toolsDrag?.id!==event.pointerId)return;suppressToolsClick=toolsDrag.moved;toolsDrag=null;});
+  for(const name of ['pointercancel','lostpointercapture'])toolsHandle.addEventListener(name,event=>{if(toolsDrag?.id!==event.pointerId)return;expandTools(toolsDrag.expanded);toolsDrag=null;suppressToolsClick=true;});
+  toolsHandle.addEventListener('click',event=>{if(suppressToolsClick&&event.detail>0){suppressToolsClick=false;return;}expandTools(!toolsExpanded);});
   const capture=()=>({version:2,view:world.view,cells:world.snapshot(),zoom,pan:{...pan}});
   function updateHistory(){$('boardUndo').disabled=!history.length;$('boardRedo').disabled=!future.length;}
   function remember(){history.push(capture());if(history.length>60)history.shift();future=[];updateHistory();}

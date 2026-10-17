@@ -8,6 +8,14 @@
 .board-view-dialog{width:360px;padding:20px;background:var(--bg-sidebar);color:var(--text-main);border:1px solid var(--line-card);border-radius:12px}
 .board-view-dialog h2{margin:0;font-size:16px}.board-view-choices{display:flex;gap:12px;margin-top:20px}.board-view-choices button{flex:1;padding:24px 12px}
 .board-tools {background:var(--bg-sidebar);border-top:1px solid var(--line-card);padding:10px 16px;flex-shrink:0}
+.board-tools .board-tools-handle{display:block;flex-shrink:0;width:100%;height:16px;margin:-5px 0 6px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;cursor:ns-resize;touch-action:none}
+.board-tools-handle::before{content:"";display:block;width:42px;height:4px;margin:auto;border-radius:4px;background:var(--text-dim)}
+.board-tools-handle:hover::before,.board-tools-handle:focus-visible::before{background:var(--accent-hover)}
+.board-tools-handle:focus-visible{outline:1px solid var(--accent);outline-offset:2px}
+.board-tools.is-expanded{display:flex;flex-direction:column;height:61.8%;min-height:0}
+.board-tools.is-expanded .board-tools-top,.board-tools.is-expanded .board-tabs,.board-tools.is-expanded .board-status{flex-shrink:0}
+.board-tools.is-expanded .board-state{flex:0 1 auto;max-height:35%;min-height:0}
+.board-tools.is-expanded .board-palette{flex:1;min-height:0;max-height:none;align-content:start}
 .board-tools-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
 .board-tools-top input{width:220px;margin:0;padding:7px 10px}.board-tools-top strong{margin-right:auto}
 .board-tabs{display:flex;gap:5px;overflow-x:auto;margin-bottom:9px}.board-tabs button{white-space:nowrap}

@@ -9,7 +9,11 @@ assert.equal(def('dispenser').facing.length,6);assert.equal(def('dispenser').wat
 assert.equal(def('dropper').facing.length,6);assert.equal(def('observer').activation,null);assert.equal(def('observer').facing.length,6);
 assert.equal(def('oak_stairs').waterlogged,true);assert.equal(def('stone').waterlogged,false);assert(!def('diamond_sword'));
 assert(def('water')&&def('lava')&&def('nether_portal'));
+for(const banner of catalog.filter(b=>b.id.endsWith('_banner'))){
+  assert.deepEqual(banner.properties.rotation,Array.from({length:16},(_,i)=>String(i)),banner.id+' rotation states');
+}
 const world=new BoardWorld(catalog);
+world.set(12,-12,{id:'red_banner',states:{rotation:'4'}});assert.equal(world.get(12,-12).states.rotation,'4');world.set(12,-12,null);
 for(let x=-12;x<=12;x++)world.set(x,4,{id:'stone'});
 world.set(0,0,{id:'water'});
 for(let i=0;i<20;i++)world.tick();

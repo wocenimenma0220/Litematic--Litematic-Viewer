@@ -16,6 +16,9 @@ JAVA = CLIENT / 'net/minecraft/world/level/block'
 OUT = ROOT / 'webapp/renderer'
 XK = ROOT.parents[1] / 'XK redstone display 26.3.0/assets/minecraft'
 RESOURCE_ROOTS = [XK] + [ROOT / ('assets/builtin/'+pack+'/assets/minecraft') for pack in ['static-block-entities','block-entity-textures','fast-chest']] + [ASSETS]
+DYE_COLORS = dict(zip(
+    ['white','orange','magenta','light_blue','yellow','lime','pink','gray','light_gray','cyan','purple','blue','brown','green','red','black'],
+    [16383998,16351261,13061821,3847130,16701501,8439583,15961002,4673362,10329495,1481884,8991416,3949738,8606770,6192150,11546150,1908001]))
 def resource(relative):
     return next((root / relative for root in RESOURCE_ROOTS if (root / relative).is_file()), ASSETS / relative)
 lang = json.loads((ASSETS / 'lang/en_us.json').read_text(encoding='utf8'))
@@ -59,6 +62,8 @@ def source_for(name):
         normalized=re.sub(r'^(?:waxed_)?(?:(?:exposed|weathered|oxidized)_)?','',name)
         exact=''.join(part.title() for part in normalized.split('_'))+'Block'
         result += ancestry(exact)
+        if name.endswith('_banner'):
+            result += ancestry('WallBannerBlock' if name.endswith('_wall_banner') else 'BannerBlock')
         for suffix, cls in [('_stairs','StairBlock'),('_slab','SlabBlock'),('_fence_gate','FenceGateBlock'),('_fence','FenceBlock'),('_wall','WallBlock'),('_trapdoor','TrapDoorBlock'),('_door','DoorBlock'),('_pressure_plate','PressurePlateBlock'),('_button','ButtonBlock'),('_hanging_sign','CeilingHangingSignBlock'),('_sign','StandingSignBlock'),('_leaves','LeavesBlock'),('_copper_bulb','CopperBulbBlock'),('_copper_grate','WaterloggedTransparentBlock'),('copper_golem_statue','CopperGolemStatueBlock')]:
             if name.endswith(suffix):
                 result += ancestry(cls)
@@ -170,6 +175,27 @@ def resolve(tex, textures):
 
 sprite_images = []
 sprite_cache = {}
+def render_banner(color):
+    # Vanilla's block/banner model only declares oak-plank particles. Its visible
+    # cloth is an entity texture with a dye layer, not that fallback block face.
+    base = resolve('entity/banner/banner_base', {})
+    overlay = resolve('entity/banner/base', {})
+    if base is None or overlay is None:
+        raise ValueError('Missing banner entity textures')
+    overlay = overlay.resize(base.size, Image.Resampling.NEAREST)
+    dye = DYE_COLORS[color]
+    channels = overlay.split()
+    overlay = Image.merge('RGBA', tuple(channels[i].point(
+        lambda n, t=(dye >> (16-i*8)) & 255: n*t//255) for i in range(3)) + (channels[3],))
+    cloth = Image.alpha_composite(base, overlay)
+    def crop(texture, rect, size):
+        return texture.crop(tuple(n*texture.width/64 for n in rect)).resize(size, Image.Resampling.NEAREST)
+    image = Image.new('RGBA', (32,32))
+    image.alpha_composite(crop(base, (46,2,48,44), (2,28)), (15,3))
+    image.alpha_composite(crop(base, (2,44,22,46), (14,2)), (9,1))
+    image.alpha_composite(crop(cloth, (1,1,21,41), (14,27)), (9,3))
+    return image
+
 def rotate_element(p,rotation):
     p=list(p);origin=rotation.get('origin',[8,8,8]);axis=rotation['axis'];angle=math.radians(rotation['angle'])
     i,j={'x':(1,2),'y':(2,0),'z':(0,1)}[axis];a,b=p[i]-origin[i],p[j]-origin[j]
@@ -183,6 +209,13 @@ def render(variant, view='side'):
     key = view + json.dumps(variant, sort_keys=True)
     if key in sprite_cache:
         return sprite_cache[key]
+    banner = re.fullmatch(r'block/board_(.+)_banner', variant.get('model', ''))
+    if banner and banner[1] in DYE_COLORS:
+        index = len(sprite_images)
+        # Like rails, show the broad, flat face in both views so it stays legible.
+        sprite_images.append(render_banner(banner[1]))
+        sprite_cache[key] = index
+        return index
     data = model(variant.get('model', ''))
     image = Image.new('RGBA', (32, 32))
     faces = []
@@ -272,6 +305,8 @@ for path in sorted((ASSETS / 'blockstates').glob('*.json')):
     if name in ['air','cave_air','void_air']:
         continue
     data = json.loads(resource('blockstates/' + path.name).read_text())
+    if name.removesuffix('_banner') in DYE_COLORS and name.endswith('_banner'):
+        data = {'variants': {'': {'model': 'block/board_' + name}}}
     if name.endswith('copper_chest'):
         texture='copper'+next(('_'+stage for stage in ['exposed','weathered','oxidized'] if stage in name),'')
         data={'variants':{f'facing={facing},type={kind}':{'model':f'block/board_{texture}_chest_{kind}','y':angle} for facing,angle in [('north',0),('east',90),('south',180),('west',270)] for kind in ['single','left','right']}}

@@ -1,6 +1,7 @@
 'use strict';
 const {app,BrowserWindow}=require('electron'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
 const root=path.resolve(process.argv[2]),out=path.join(__dirname,'release-output');fs.mkdirSync(out,{recursive:true});
+const expectedVersion=require('../../webapp/package.json').version;
 app.setPath('userData',path.join(out,'electron'));BrowserWindow.prototype.show=function(){};
 process.argv=process.argv.slice(0,2);let failed=false;
 const until=async(fn,timeout=60000)=>{const end=Date.now()+timeout;while(!await fn()){if(Date.now()>end)throw Error('Packaged app timed out');await new Promise(r=>setTimeout(r,100));}};
@@ -10,10 +11,12 @@ app.once('browser-window-created',(_event,win)=>{
     const evaluate=code=>win.webContents.executeJavaScript(code);
     try{
       await until(async()=>{try{return !!await evaluate('window.engine.ping()');}catch{return false;}});
-      assert.equal(require(path.join(root,'webapp/package.json')).version,'1.1.1.0');
+      assert.equal(require(path.join(root,'webapp/package.json')).version,expectedVersion);
       await evaluate(`if(document.getElementById('welcomeDialog')?.open)document.getElementById('welcomeDialog').close();for(const d of document.querySelectorAll('dialog[open]'))d.close();document.getElementById('menuBoard').click();document.getElementById('boardViewSide').click();`);
       const info=await evaluate(`({blocks:BoardCatalog.length,sounds:Object.keys(BoardSounds).length,view:document.getElementById('boardTitle').textContent,portal:BoardSounds.nether_portal.event})`);
       assert.equal(info.blocks,1135);assert.equal(info.sounds,1135);assert.equal(info.portal,'block.stone.place');assert(info.view.includes('侧视'));
+      const banners=await evaluate(`(async()=>{const img=new Image();img.src='board-atlas.png';await img.decode();const c=document.createElement('canvas');c.width=c.height=32;const ctx=c.getContext('2d');const sprites=['red','blue'].map(color=>{const index=BoardCatalog.find(b=>b.id===color+'_banner').visuals[0].icon;ctx.clearRect(0,0,32,32);ctx.drawImage(img,index%64*32,Math.floor(index/64)*32,32,32,0,0,32,32);return{center:[...ctx.getImageData(15,15,1,1).data],corner:ctx.getImageData(0,0,1,1).data[3]};});document.getElementById('boardToolsHandle').click();const ratio=document.getElementById('boardTools').getBoundingClientRect().height/document.getElementById('boardDialog').getBoundingClientRect().height;document.getElementById('boardToolsHandle').click();return{sprites,ratio};})()`);
+      assert(banners.sprites[0].center[0]>banners.sprites[0].center[2]);assert(banners.sprites[1].center[2]>banners.sprites[1].center[0]);assert(banners.sprites.every(s=>s.corner===0));assert(Math.abs(banners.ratio-.618)<.003);
       await evaluate(`window.played=[];const play=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){played.push(this.src);return play.call(this);};document.querySelector('#boardTabs button:last-child').click();const search=document.getElementById('boardSearch');search.value='ice';search.dispatchEvent(new Event('input'));document.querySelector('[data-block="ice"]').click();`);
       const rect=await evaluate(`(()=>{const r=document.getElementById('boardCanvas').getBoundingClientRect();return{x:Math.round(r.x+100),y:Math.round(r.y+100)}})()`);
       win.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...rect});win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...rect});
@@ -27,7 +30,7 @@ app.once('browser-window-created',(_event,win)=>{
       await until(async()=>evaluate('state.viewReady&&!state.rendering&&!state.scenePreparing&&!state.fileOpening'),90000);
       const preview=await evaluate('({ready:state.viewReady,backend:state.previewBackend,quads:state.view?.quadCount||0})');assert(preview.ready);assert(preview.quads>0);
       fs.writeFileSync(path.join(out,'packaged-preview.png'),(await win.webContents.capturePage()).toPNG());
-      const report={pass:true,version:'1.1.1.0',...info,audioDurations:durations,preview};fs.writeFileSync(path.join(out,'packaged-result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
+      const report={pass:true,version:expectedVersion,...info,banners,audioDurations:durations,preview};fs.writeFileSync(path.join(out,'packaged-result.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report));
     }catch(error){failed=true;fs.writeFileSync(path.join(out,'packaged-result.json'),JSON.stringify({pass:false,error:error.stack},null,2));console.error(error.stack);}finally{app.quit();}
   });
 });
