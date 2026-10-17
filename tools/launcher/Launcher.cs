@@ -29,11 +29,11 @@ using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("投影预览")]
 [assembly: AssemblyProduct("投影预览")]
-[assembly: AssemblyCompany("kinda sus")]
+[assembly: AssemblyCompany("LiteKinda")]
 [assembly: AssemblyDescription("Minecraft 投影预览")]
-[assembly: AssemblyVersion("1.1.1.2")]
-[assembly: AssemblyFileVersion("1.1.1.2")]
-[assembly: AssemblyInformationalVersion("1.1.1.2")]
+[assembly: AssemblyVersion("1.1.4")]
+[assembly: AssemblyFileVersion("1.1.4")]
+[assembly: AssemblyInformationalVersion("1.1.4")]
 
 internal static class Launcher
 {

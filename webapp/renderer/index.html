@@ -8,6 +8,7 @@
   <link rel="icon" href="../icon.png" />
   <link rel="stylesheet" href="style.css" />
   <link rel="stylesheet" href="board.css" />
+  <link rel="stylesheet" href="projection-edit.css" />
 </head>
 <body>
   <div class="titlebar">
@@ -17,7 +18,7 @@
       <button class="menubtn" id="menuFile">文件</button>
       <button class="menubtn" id="menuKeys">按键</button>
       <button class="menubtn" id="menuCommands">指令</button>
-      <button class="menubtn" id="menuBoard">二维搭建</button>
+      <button class="menubtn" id="menuBoard">二维搭建</button><button class="menubtn" id="menuEditProjection">更改投影 (G)</button>
       <div class="dropdown hidden" id="menuFileDrop">
         <button id="menuOpenSchematic">打开投影 (.litematic)…</button>
         <button id="menuImportPack">导入材质包…</button>
@@ -54,6 +55,13 @@
         <div id="fileInfo" class="fileinfo hidden"></div>
       </section>
 
+      <section class="group" id="blockSearchPanel"><h2>方块搜索与定位</h2>
+        <input id="blockSearchQuery" type="search" maxlength="128" placeholder="中文名称或方块 ID" aria-label="搜索投影中的方块" />
+        <div class="block-search-actions"><button id="blockSearchRun">搜索</button><button id="blockSearchClear">清除</button></div>
+        <label class="check"><input id="blockSearchDim" type="checkbox" checked />淡化模型，突出匹配位置</label>
+        <p id="blockSearchStatus" class="muted small" aria-live="polite">打开投影后搜索。</p>
+        <div class="block-search-actions"><button id="blockSearchLocate" disabled>定位当前</button><button id="blockSearchPrev" disabled>上一个</button><button id="blockSearchNext" disabled>下一个</button></div>
+      </section>
       <section class="group"><h2>投影材料</h2><button id="btnMaterials" disabled>查看 / 导出材料清单…</button></section>
       <section class="group">
         <h2>玩家头颅</h2>
@@ -228,6 +236,7 @@
           </select>
         </label>
         <button id="btnImportBackground" class="toolbar-button" title="PNG / JPG，10 MB 以内">导入背景…</button>
+        <button id="btnToggleConsole" class="toolbar-button" aria-expanded="true" aria-controls="debugConsole">隐藏调试信息</button>
         <button id="btnFullscreen" class="toolbar-button" title="F11 切换全屏，Esc 退出">全屏 (F11)</button>
       </div>
       <div id="viewport" class="viewport checker" tabindex="-1">
@@ -236,6 +245,11 @@
         <img id="crosshair" src="crosshair.png" class="crosshair hidden" alt="" aria-hidden="true" draggable="false" />
         <img id="preview" alt="渲染预览" class="hidden" />
         <div id="placeholder" class="placeholder">还没有渲染结果</div>
+        <section id="projectionFlyHotbar" class="projection-fly-hotbar hidden" aria-label="漫游物品栏">
+          <div id="projectionFlyItemName" class="projection-fly-item-name" aria-live="polite"></div>
+          <div id="projectionFlySlots" class="projection-fly-slots" role="group" aria-label="背包第一栏 9 格"></div>
+          <button id="projectionFlyDebug" class="projection-fly-slot projection-fly-debug" type="button" aria-label="调试棒" aria-pressed="false"><img src="debug-stick.png" alt="" draggable="false" /><span class="projection-fly-key"></span></button>
+        </section>
         <section id="blockInspector" class="block-inspector hidden" aria-label="方块或实体状态与容器内容">
           <div class="inspector-header"><h2 id="inspectName"></h2><button id="inspectClose" aria-label="关闭状态面板" title="关闭">×</button></div>
           <p id="inspectId" class="muted small"></p>
@@ -247,8 +261,23 @@
         </section>
         <div id="busy" class="busy hidden"><div class="spinner"></div><span id="busyText">渲染中…</span></div>
       </div>
+      <section id="projectionTools" class="board-tools projection-tools hidden" aria-label="更改投影工具箱">
+        <button id="projectionToolsHandle" class="board-tools-handle" type="button" aria-label="展开方块工具栏" aria-expanded="false" aria-controls="projectionPalette"></button>
+        <div class="board-tools-top"><strong>更改投影</strong><span id="projectionSelected">石头</span><button id="projectionPlace" aria-pressed="true">方块</button><button id="projectionDebug" aria-pressed="false"><img src="debug-stick.png" alt="" />调试棒</button><button id="projectionUndo" disabled>撤销</button><button id="projectionRedo" disabled>重做</button><button id="projectionExport">导出投影…</button><button id="projectionClose">退出更改 (G)</button><input id="projectionSearch" type="search" placeholder="搜索方块名称 / ID" aria-label="搜索编辑方块" /></div>
+        <p class="projection-help">方块：左键删除、中键吸取；右键容器打开，Shift＋右键在其表面放置，侧接同类单箱可合并。方块随观察朝向放置，铁轨用调试棒调整。按住 Alt 拖动旋转，V 漫游，Esc 释放鼠标以操作工具箱。</p>
+        <div class="projection-inventory-layout">
+          <div class="projection-catalog"><nav id="projectionTabs" class="board-tabs" aria-label="编辑方块分类"></nav><div id="projectionPalette" class="board-palette" aria-label="更改投影方块工具栏"></div></div>
+          <aside class="projection-backpack" aria-label="36 格背包">
+            <div class="projection-backpack-title"><strong>背包</strong><span>36 格</span></div>
+            <div id="projectionHotbar" class="projection-hotbar" aria-label="背包第一栏 / 快捷栏 9 格"></div>
+            <div id="projectionInventory" class="projection-inventory" aria-label="其余背包 27 格"></div>
+            <p id="inventoryHint" class="projection-inventory-hint">拖入方块 · 拖动整理 · 右键移除</p>
+          </aside>
+        </div>
+        <div id="projectionStatus" class="board-status" role="status">选择方块后在三维视图中操作，状态用调试棒修改。原文件保持原样，导出作者 LiteKinda。</div>
+      </section>
       <section id="exportTasks" class="export-tasks hidden" aria-label="后台导出任务"></section>
-      <section class="console" aria-label="日志与指令">
+      <section id="debugConsole" class="console" aria-label="日志与指令">
         <div id="log" class="log" role="log" aria-label="运行日志"></div>
         <form id="commandBar" class="command-bar" aria-label="输入指令">
           <label for="commandInput" class="command-prompt" title="输入指令">&gt;</label>
@@ -272,7 +301,7 @@
   <dialog id="welcomeDialog" class="welcome-dialog" aria-labelledby="welcomeTitle">
     <img class="welcome-icon" src="../icon.png" alt="投影预览图标" />
     <h2 id="welcomeTitle">欢迎使用投影预览</h2>
-    <p>作者 kinda sus</p>
+    <p>作者 LiteKinda</p>
     <p>喜欢的话支持一下作者吧</p>
     <p><a id="authorLink" href="https://www.bilibili.com/video/BV1UT42167xb/?share_source=copy_web&amp;vd_source=d1e157c09b3321a7ecaf103abcde1586">网页链接</a></p>
     <div class="welcome-actions">
@@ -281,7 +310,7 @@
     </div>
     <p id="welcomeError" class="welcome-error hidden" role="alert"></p>
   </dialog>
-  <dialog id="shortcutDialog" class="shortcut-dialog"><div class="dialog-title"><h2>自定义按键</h2><button id="closeShortcuts" type="button">关闭</button></div><p class="muted small">点击右侧绑定，再按新键。左右 Shift、Ctrl、Alt 视为同一键；鼠标键也可绑定。</p><div id="shortcutRows"></div><p id="shortcutFeedback" class="muted small" aria-live="polite"></p><button id="cancelBinding" class="hidden" type="button">取消本次绑定</button><button id="resetShortcuts" type="button">恢复默认按键</button><p class="muted small">视角：拖动鼠标旋转，滚轮缩放；漫游：移动鼠标转向。微调：按住设置的修饰键并滚动滚轮。</p></dialog>
+  <dialog id="shortcutDialog" class="shortcut-dialog"><div class="dialog-title"><h2>自定义按键</h2><button id="closeShortcuts" type="button">关闭</button></div><p class="muted small">点击右侧绑定，再按新键或滚动滚轮。左右 Shift、Ctrl、Alt 视为同一键；鼠标键也可绑定。</p><div id="shortcutRows"></div><p id="shortcutFeedback" class="muted small" aria-live="polite"></p><button id="cancelBinding" class="hidden" type="button">取消本次绑定</button><button id="resetShortcuts" type="button">恢复默认按键</button><p class="muted small">视角：拖动鼠标旋转，滚轮缩放；更改投影中滚轮切换快捷栏物品，Alt＋滚轮缩放。漫游：移动鼠标转向。微调：按住设置的修饰键并滚动滚轮。</p></dialog>
   <dialog id="commandsDialog" class="shortcut-dialog"><div class="dialog-title"><h2>支持的指令</h2><button id="closeCommands" type="button">关闭</button></div><p class="muted small">选择工具开启后可设置角点；坐标按投影自身坐标输入，支持负数。省略坐标时选取准星所指方块，漫游中未指向方块时使用当前位置。</p><div id="commandRows"></div><button id="commandsInput" type="button">打开指令输入</button></dialog>
   <dialog id="boardViewDialog" class="board-view-dialog" aria-label="选择视角"><div class="dialog-title"><h2>二维搭建</h2><button id="boardViewCancel">取消</button></div><div class="board-view-choices"><button id="boardViewSide">侧视</button><button id="boardViewTop">俯视</button></div></dialog>
   <dialog id="boardDialog" class="board-dialog" aria-label="二维方块搭建">
@@ -302,5 +331,10 @@
   <script src="selection-tools.js"></script>
   <script src="shortcuts-ui.js"></script>
   <script src="export-tools.js"></script>
+  <script src="block-search.js"></script>
+  <script src="debug-stick-properties.js"></script>
+  <script src="projection-edit-model.js"></script>
+  <script src="editor-inventory.js"></script>
+  <script src="projection-edit.js"></script>
 </body>
 </html>

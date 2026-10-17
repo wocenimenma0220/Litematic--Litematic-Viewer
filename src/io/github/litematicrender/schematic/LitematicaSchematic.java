@@ -213,6 +213,10 @@ public final class LitematicaSchematic {
         return schem;
     }
 
+    /** Reuse immutable packed pages for live edits without a disk round-trip. */
+    public static LitematicaSchematic fromData(NbtCompound root){
+        try{var schematic=new LitematicaSchematic();schematic.readFromData(root);return schematic;}catch(IOException error){throw new IllegalArgumentException("编辑数据无效",error);}
+    }
     private void readFromData(NbtCompound root) throws IOException {
         if (!root.contains("Version")) {
             throw new IOException("Missing schematic Version");

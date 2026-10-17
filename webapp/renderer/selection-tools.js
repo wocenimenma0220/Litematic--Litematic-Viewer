@@ -23,8 +23,9 @@ function toggleSelectionRender(value=!state.selection.renderEnabled){
   if(!state.viewReady||state.cpuPreview){log('选择渲染需要 GPU 预览就绪。','err');return;}
   state.selection.renderEnabled=value;selectionChanged();
 }
-function toggleSelection(value=!state.selection.enabled){
+async function toggleSelection(value=!state.selection.enabled){
   if(!state.viewReady||state.cpuPreview){log('选择渲染工具需要 GPU 预览就绪。','err');return;}
+  if(value&&window.projectionEditor?.enabled)await window.projectionEditor.toggle(false);
   state.selection.enabled=value;selectionSession++;dragging=false;flyPress=null;closeInspector();selectionChanged();
 }
 function resetSelection(){selectionSession++;state.selection.reset();selectionChanged();}
@@ -54,6 +55,7 @@ function beginCommandInput(){
   commandResume=commandResume||state.fly&&(state.flyLookActive||state.flyLockPending);state.keys.clear();shortcutHeldKeys.clear();pauseFlyLook();
 }
 function openCommand(){
+  setConsoleHidden(false);
   beginCommandInput();
   selectionUi.command.focus();if(!selectionUi.command.value)selectionUi.command.value='//';
   selectionUi.command.setSelectionRange(selectionUi.command.value.length,selectionUi.command.value.length);

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { nativeImage } = require('electron');
 const {memoryPolicy}=require('./performance-policy');
 const {cleanShortcutBindings}=require('./renderer/keyboard-shortcuts');
+const {cleanInventory}=require('./renderer/editor-inventory');
 const BACKGROUND_LIMIT = 10 * 1024 * 1024;
 const BACKGROUND_MODES = new Set(['checker', 'sky', 'white', 'dark', 'image', 'color']);
 const AUTHOR_URL = 'https://www.bilibili.com/video/BV1UT42167xb/?share_source=copy_web&vd_source=d1e157c09b3321a7ecaf103abcde1586';
@@ -23,7 +24,9 @@ class UiSettings {
       try { stored = JSON.parse(await fs.readFile(this.file, 'utf8')) || {}; } catch { /* first launch */ }
       this.state = {
         hideWelcome: stored.hideWelcome === true,
+        consoleHidden: stored.consoleHidden === true,
         keybindings:cleanShortcutBindings(stored.keybindings),
+        editorInventory:cleanInventory(stored.editorInventory),
         sidebarCollapsed: stored.sidebarCollapsed === true,
         realLighting: stored.realLighting !== false,
         lodPreview: stored.lodPreview !== false,
@@ -63,7 +66,9 @@ class UiSettings {
     } catch { /* no imported background */ }
     return {
       showWelcome: !stored.hideWelcome,
+      consoleHidden: stored.consoleHidden,
       keybindings:stored.keybindings,
+      editorInventory:stored.editorInventory,
       sidebarCollapsed: stored.sidebarCollapsed,
       realLighting: stored.realLighting,
       lodPreview: stored.lodPreview,

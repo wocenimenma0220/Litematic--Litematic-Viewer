@@ -123,6 +123,15 @@ public final class JsonRpcServer {
                 return this.engine.open(Path.of(file));
             }
 
+            case "editPick": {var selection=MiniJson.asObject(p.get("selection"));return this.engine.editPick(vector(p,"origin"),vector(p,"direction"),MiniJson.asDouble(p.get("maximum"),4096),selection==null?null:vector(selection,"min"),selection==null?null:vector(selection,"max"));}
+            case "editStates": return this.engine.editStates(MiniJson.asArray(p.get("positions")));
+            case "commitEdits": return this.engine.commitEdits();
+            case "editPatch": {var selection=MiniJson.asObject(p.get("selection"));return this.engine.editPatch(Path.of(require(p,"directory")),selection==null?null:vector(selection,"min"),selection==null?null:vector(selection,"max"));}
+            case "inspectPosition": {var position=MiniJson.asArray(p.get("position"));if(position==null||position.size()!=3)throw new IllegalArgumentException("无效坐标");return this.engine.inspectPosition(position.stream().mapToInt(v->((Number)v).intValue()).toArray());}
+            case "editBlock": return this.engine.editBlock(p);
+            case "exportEdited": return this.engine.exportEdited(Path.of(require(p,"out")));
+            case "searchBlocks": return this.engine.searchBlocks(require(p,"query"),MiniJson.asInt(p.get("offset"),0));
+            case "writeBoard": return io.github.litematicrender.schematic.BoardSchematic.write(Path.of(require(p,"out")),MiniJson.asArray(p.get("cells")));
             case "materials": return this.engine.materials(MiniJson.asBool(p.get("waterAsIce"),false));
             case "exportMaterials": return this.engine.exportMaterials(Path.of(require(p,"out")),MiniJson.asString(p.get("scope"),"combined"),MiniJson.asBool(p.get("waterAsIce"),false));
             case "skinSettings": return this.engine.skinSettings();

@@ -1,0 +1,18 @@
+'use strict';
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const {EditorInventory,cleanInventory,SLOT_COUNT}=require('../../webapp/renderer/editor-inventory');
+const {SHORTCUT_ACTIONS,cleanShortcutBindings,validShortcut}=require('../../webapp/renderer/keyboard-shortcuts');
+const context={window:{}};vm.runInNewContext(fs.readFileSync(require.resolve('../../webapp/renderer/board-catalog'),'utf8'),context);
+const ids=Array.from(context.window.BoardCatalog,b=>b.id),inventory=new EditorInventory(ids);
+assert.equal(SLOT_COUNT,36);assert.equal(inventory.snapshot().items.length,36);assert(inventory.snapshot().items.every(id=>id===null));assert.equal(inventory.selected,null);
+inventory.set(0,'stone');inventory.set(1,'glass');inventory.move(0,27);assert.equal(inventory.get(0),null);assert.equal(inventory.selected,'stone');
+inventory.move(1,27);assert.equal(inventory.get(1),'stone');assert.equal(inventory.selected,'glass');inventory.move(27,29);assert.equal(inventory.selected,null);inventory.select(2);assert.equal(inventory.selected,'glass');
+const before=inventory.snapshot();inventory.move(29,29);assert.deepEqual(inventory.snapshot(),before);assert.throws(()=>inventory.move(29,36));assert.deepEqual(inventory.snapshot(),before);assert.throws(()=>inventory.set(0,'nonexistent'));
+inventory.swap(1);assert.equal(inventory.selected,'stone');assert.equal(inventory.get(1),'glass');inventory.equip(null);assert.equal(inventory.selected,null);
+inventory.select(8);inventory.cycle(1);assert.equal(inventory.slot,0);inventory.cycle(-1);assert.equal(inventory.slot,8);
+inventory.select(2);inventory.equip('chest');const restored=new EditorInventory(ids,JSON.parse(JSON.stringify(inventory.snapshot())));assert.deepEqual(restored.snapshot(),inventory.snapshot());assert.equal(restored.selected,'chest');
+const detached=restored.snapshot();detached.items[29]='glass';assert.equal(restored.selected,'chest','snapshot aliases inventory');
+const legacy=new EditorInventory(ids,{page:2,slot:8,overrides:{0:{27:'stone'},2:{0:'chest'}}});assert.deepEqual(legacy.snapshot(),new EditorInventory(ids).snapshot(),'old auto-filled pages carried over');
+const malformed=cleanInventory({version:2,slot:20,items:['../file','stone',null,12,'a'.repeat(129),...Array(40).fill('glass')]});assert.equal(malformed.slot,0);assert.equal(malformed.items.length,36);assert.deepEqual(malformed.items.slice(0,5),[null,'stone',null,null,null]);assert(new EditorInventory(ids,{version:2,items:['nonexistent']}).snapshot().items.every(id=>id===null));
+const bindings=cleanShortcutBindings({edit:['KeyH'],editorDebug:['KeyJ'],editorNext:['KeyN'],inventoryNext:['KeyM']});assert.deepEqual(bindings.edit,['KeyH']);assert.deepEqual(bindings.editorSlot9,['Digit9']);assert.deepEqual(bindings.editorPrevious,['WheelUp']);assert.deepEqual(bindings.editorNext,['KeyN']);assert(!Object.hasOwn(bindings,'inventoryNext'));assert(validShortcut('WheelDown'));assert(!validShortcut('WheelSideways'));assert.equal(new Set(SHORTCUT_ACTIONS.map(a=>a[0])).size,SHORTCUT_ACTIONS.length);
+console.log('PASS: single empty 36-slot backpack, move / swap / remove / self-drop, atomic invalid moves, hotbar wrap, saved personal items, old auto-fill reset and shortcut migration');

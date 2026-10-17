@@ -41,7 +41,10 @@ public final class BlockInspector {
         if(hit==null)return Map.of("hit",false);
         var q=hit.quad();
         if(q.entityIndex>=0)return inspectEntity(q.regionName,q.entityIndex,hit.distance());
-        var target=lookup(q.blockX,q.blockY,q.blockZ,q.regionName);
+        return inspectTarget(lookup(q.blockX,q.blockY,q.blockZ,q.regionName),hit.distance());
+    }
+    public Map<String,Object> inspectPosition(int x,int y,int z){return inspectTarget(lookup(x,y,z,null),0);}
+    private Map<String,Object> inspectTarget(Target target,double distance){
         if(target==null)return Map.of("hit",false);
         var result=new LinkedHashMap<String,Object>();var tag=target.tag();
         result.put("hit",true);result.put("id",target.state.blockId);
@@ -51,7 +54,7 @@ public final class BlockInspector {
         var properties=new LinkedHashMap<String,String>();
         for(var property:target.state.properties)properties.put(property.name(),target.state.getValue(property.name()));
         properties.putAll(target.region.storedProperties(target.lx,target.ly,target.lz));
-        result.put("properties",properties);result.put("distance",hit.distance());
+        result.put("properties",properties);result.put("distance",distance);
         if(tag!=null)result.put("data",plain(tag,0));
         var inventory=inventory(target);if(inventory!=null)result.put("container",inventory);
         return result;
@@ -69,7 +72,7 @@ public final class BlockInspector {
         if(tag.contains("Health"))properties.put("health",io.github.litematicrender.schematic.SchematicEntity.number(tag,"Health",0));
         result.put("properties",properties);
         int slots=EntityGeometry.capacity(entity);
-        if(slots>0){var rows=new ArrayList<Map<String,Object>>();readItems(tag,0,rows);rows.sort(Comparator.comparingInt(row->(Integer)row.get("displaySlot")));String status=inventoryStatus(tag);if(!rows.isEmpty()&&status.equals("missing"))status="saved";if(!rows.isEmpty()&&status.equals("loot"))status="partial";result.put("container",Map.of("slots",slots,"status",status,"items",groupItems(rows)));}
+        if(slots>0){var rows=new ArrayList<Map<String,Object>>();readItems(tag,0,rows);rows.sort(Comparator.comparingInt(row->(Integer)row.get("displaySlot")));String status=inventoryStatus(tag);if(!rows.isEmpty()&&status.equals("missing"))status="saved";if(!rows.isEmpty()&&status.equals("loot"))status="partial";result.put("container",Map.of("slots",slots,"status",status,"slotItems",slotItems(rows),"items",groupItems(rows)));}
         return result;
     }
     private Map<String,Object> inventory(Target target) {
@@ -81,7 +84,7 @@ public final class BlockInspector {
         if(id.equals("minecraft:ender_chest")&&!supplied)status="personal";
         else status=inventoryStatus(tag);
         boolean pair=(id.equals("minecraft:chest")||id.equals("minecraft:trapped_chest"))&&Set.of("left","right").contains(String.valueOf(target.state.getValue("type")));
-        int offset=pair&&"right".equals(target.state.getValue("type"))?27:0;
+        int offset=pair&&"left".equals(target.state.getValue("type"))?27:0;
         readItems(tag,offset,rows);
         if(pair) {
             slots=54;
@@ -104,7 +107,7 @@ public final class BlockInspector {
         if(!rows.isEmpty()&&status.equals("loot"))status="partial";
         rows.sort(Comparator.comparingInt(row->(Integer)row.get("displaySlot")));
         if(rows.isEmpty()&&status.equals("saved"))status="empty";
-        result.put("slots",slots);result.put("status",status);result.put("items",groupItems(rows));
+        result.put("slots",slots);result.put("status",status);result.put("slotItems",slotItems(rows));result.put("items",groupItems(rows));
         return result;
     }
     private static String inventoryStatus(NbtCompound tag) {
@@ -139,7 +142,7 @@ public final class BlockInspector {
         String custom="";var components=item.getCompound("components").orElse(null);
         if(components!=null)custom=BlockEntityData.nbtText(components.get("minecraft:custom_name").orElse(null));
         if(custom.isBlank()) {var old=item.getCompound("tag").orElse(null);if(old!=null){var display=old.getCompound("display").orElse(null);if(display!=null)custom=BlockEntityData.plainText(display.getStringOrDefault("Name",""));}}
-        row.put("name",custom.isBlank()?name(id):custom);row.put("data",plain(item,0));
+        row.put("name",custom.isBlank()?name(id):custom);row.put("data",completeItem(item));
         row.put("_mergeKey",stackKey(item));
         String icon=icons.computeIfAbsent(id,this::icon);if(!icon.isEmpty())row.put("icon",icon);
         result.add(row);
@@ -164,6 +167,7 @@ public final class BlockInspector {
             for(int i=0;i<list.size();i++)canonical(list.get(i),output,false);
         } else value.write(new NbtOutput(output));
     }
+    private static List<Map<String,Object>> slotItems(List<Map<String,Object>> rows){return rows.stream().map(row->{var copy=new LinkedHashMap<String,Object>(row);copy.remove("_mergeKey");return (Map<String,Object>)copy;}).toList();}
     @SuppressWarnings("unchecked")
     private static List<Map<String,Object>> groupItems(List<Map<String,Object>> rows) {
         var groups=new LinkedHashMap<String,Map<String,Object>>();
@@ -208,6 +212,16 @@ public final class BlockInspector {
         if(value instanceof NbtScalars.NbtByte n)return n.value;
         if(value instanceof NbtScalars.NbtShort n)return n.value;
         if(value instanceof NbtScalars.NbtInt n)return n.value;return fallback;
+    }
+    /** Item details keep every saved component; the surrounding block summary remains bounded. */
+    private static Object completeItem(NbtElement value){
+        if(value instanceof NbtCompound compound){var map=new LinkedHashMap<String,Object>();for(String key:compound.getKeys())map.put(key,completeItem(compound.get(key).orElse(null)));return map;}
+        if(value instanceof NbtList list){var result=new ArrayList<Object>();for(int i=0;i<list.size();i++)result.add(completeItem(list.get(i)));return result;}
+        if(value instanceof NbtScalars.NbtString n)return n.value;
+        if(value instanceof NbtScalars.NbtIntArray n)return Arrays.stream(n.value).boxed().toList();
+        if(value instanceof NbtScalars.NbtLongArray n)return Arrays.stream(n.value).mapToObj(number->number>9007199254740991L||number< -9007199254740991L?(Object)Long.toString(number):(Object)number).toList();
+        if(value instanceof NbtScalars.NbtByteArray n){var result=new ArrayList<Integer>();for(byte b:n.value)result.add((int)b);return result;}
+        return plain(value,0);
     }
     public static Object plain(NbtElement value,int depth) {
         if(value==null)return null;if(depth>12)return "…";

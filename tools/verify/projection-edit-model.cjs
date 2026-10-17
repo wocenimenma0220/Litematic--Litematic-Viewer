@@ -1,0 +1,6 @@
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');const {DebugStick,adjacent,within}=require('../../webapp/renderer/projection-edit-model');const c={window:{}};vm.runInNewContext(fs.readFileSync(require.resolve('../../webapp/renderer/debug-stick-properties.js'),'utf8'),c);const stick=new DebugStick(c.window.DebugStickProperties);
+const hit={hit:true,id:'minecraft:dispenser',states:{facing:'north',triggered:'false'},position:[-2,0,0],face:[0,0,1]};
+let result=stick.interact(hit,false);assert.equal(result.property,'facing');result=stick.interact(hit,true);assert.equal(result.value,'east');result=stick.interact(hit,true,true);assert.equal(result.value,'down');
+result=stick.interact(hit,false);assert.equal(result.property,'triggered');result=stick.interact(hit,true);assert.equal(result.value,'true');assert.equal(stick.interact({...hit,id:'minecraft:stone',states:{}},false).changed,false);
+assert.equal(stick.interact(hit,false,true).property,'facing');assert.deepEqual(adjacent(hit),[-2,0,1]);assert(!within([0,0,1],{min:[0,0,0],max:[1,1,1]}));assert(within([-2,0,0],null));
+console.log('PASS: vanilla sorted properties, enum value order, per-block property memory, shift reverse, no-property blocks and selection bounds');

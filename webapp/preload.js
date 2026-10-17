@@ -10,8 +10,10 @@ contextBridge.exposeInMainWorld('exportsApi',{
   onUpdate:callback=>{const handler=(_event,job)=>callback(job);ipcRenderer.on('exports:update',handler);return()=>ipcRenderer.removeListener('exports:update',handler);},
 });
 contextBridge.exposeInMainWorld('appUi', {
+  setConsoleHidden: hidden=>ipcRenderer.invoke('ui:consoleHidden',hidden),
   settings: () => ipcRenderer.invoke('ui:settings'),
   setKeybindings: bindings=>ipcRenderer.invoke('ui:keybindings',bindings),
+  setEditorInventory: inventory=>ipcRenderer.invoke('ui:editorInventory',inventory),
   setPreviewBackend: (backend) => ipcRenderer.invoke('ui:previewBackend', backend),
   setLargeProjection: (enabled)=>ipcRenderer.invoke('ui:largeProjection',enabled),
   setProjectionMode: mode=>ipcRenderer.invoke('ui:projectionMode',mode),
@@ -37,6 +39,14 @@ contextBridge.exposeInMainWorld('appUi', {
 });
 
 contextBridge.exposeInMainWorld('engine', {
+  editStates: positions=>ipcRenderer.invoke('engine:editStates',positions),
+  commitEdits: ()=>ipcRenderer.invoke('engine:commitEdits'),
+  editPatch: options=>ipcRenderer.invoke('engine:editPatch',options),
+  inspectPosition: position=>ipcRenderer.invoke('engine:inspectPosition',position),
+  editPick: request=>ipcRenderer.invoke('engine:editPick',request),
+  editBlock: request=>ipcRenderer.invoke('engine:editBlock',request),
+  exportEdited: request=>ipcRenderer.invoke('engine:exportEdited',request),
+  searchBlocks: request=>ipcRenderer.invoke('engine:searchBlocks',request),
   status: () => ipcRenderer.invoke('engine:status'),
   ping: () => ipcRenderer.invoke('engine:ping'),
   selectBlock: ray=>ipcRenderer.invoke('engine:selectBlock',ray),

@@ -289,6 +289,17 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
     private static void partition(java.util.List<SceneMesh.MeshQuad> source,java.util.Map<SectionVisibility.Position,SceneMesh> targets) {
         for(var quad:source){var key=new SectionVisibility.Position(Math.floorDiv(quad.blockX,16),Math.floorDiv(quad.blockY,16),Math.floorDiv(quad.blockZ,16));var mesh=targets.get(key);if(mesh==null)throw new IllegalStateException("几何所有权超出 32 格构建批次："+key);switch(quad.layer){case SOLID->mesh.solid.add(quad);case CUTOUT->mesh.cutout.add(quad);case PORTAL->mesh.portal.add(quad);case FLUID->mesh.fluid.add(quad);case TRANSLUCENT->mesh.translucent.add(quad);case WATER_MASK->mesh.waterMask.add(quad);}}
     }
+    private java.util.Map<LitematicaSchematic.Region,List<int[]>> editingCells;
+    /** Bake a sparse set of changed cells and their halo; no section discovery or global light pass. */
+    public SceneMesh buildEditing(List<io.github.litematicrender.world.Vec3i> cells,SceneBuilder base,double[] minimum,double[] maximum){
+        this.editingCells=new java.util.LinkedHashMap<>();
+        for(var p:cells)for(int i=regions.size()-1;i>=0;i--){var r=regions.get(i);var off=regionOffsets.get(i);int x=p.x()-off[0],y=p.y()-off[1],z=p.z()-off[2];if(x<0||y<0||z<0||x>=r.blocks.sizeX||y>=r.blocks.sizeY||z>=r.blocks.sizeZ)continue;editingCells.computeIfAbsent(r,key->new ArrayList<>()).add(new int[]{x,y,z});break;}
+        if(base!=null){this.skins=base.skins;this.font=base.font;this.generatedSprites.putAll(base.generatedSprites);this.light=base.light;this.lightOrigin=base.lightOrigin;this.realLighting=base.realLighting;this.lightingEnabled=base.lightingEnabled;}
+        if(this.skins==null)this.skins=new io.github.litematicrender.render.skin.SkinResolver(java.nio.file.Path.of(System.getProperty("litematicrender.home",".")));
+        if(minimum!=null){selectionMin=new int[]{(int)minimum[0],(int)minimum[1],(int)minimum[2]};selectionMax=new int[]{(int)maximum[0],(int)maximum[1],(int)maximum[2]};}
+        if(light!=null)this.smoothLighting=new SmoothLighting(light,lightOrigin,this::blockAt,shapes);
+        this.prepared=true;return assemble();
+    }
     public SceneMesh build() {prepare();range=null;return assemble();}
     private int[] selectionMin,selectionMax;
     private boolean selectionContains(int x,int y,int z){return x>=selectionMin[0]&&y>=selectionMin[1]&&z>=selectionMin[2]&&x<selectionMax[0]&&y<selectionMax[1]&&z<selectionMax[2];}
@@ -306,6 +317,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
         finally{selectionMin=null;selectionMax=null;range=previousRange;rangeSize=previousSize;streaming=previousStreaming;light=previousLight;sectionLight=previousSectionLight;lightOrigin=previousOrigin;smoothLighting=previousSmooth;lightCacheReady=false;aoState=null;}
     }
     private void forEachBlock(LitematicaSchematic.Region region,int[] off,LitematicaSchematic.BlockContainer.NonAirConsumer consumer) {
+        if(editingCells!=null){for(var p:editingCells.getOrDefault(region,List.of())){int x=p[0],y=p[1],z=p[2];if(selectionMin!=null&&!selectionContains(x+off[0],y+off[1],z+off[2]))continue;var state=region.blocks.get(x,y,z);if(!state.isAir())consumer.accept(x,y,z,state);}return;}
         if(range==null&&selectionMin==null){region.blocks.forEachNonAir(consumer);return;}
         int[] min=selectionMin!=null?selectionMin:new int[]{range.x()*16,range.y()*16,range.z()*16};
         int[] max=selectionMax!=null?selectionMax:new int[]{min[0]+rangeSize,min[1]+rangeSize,min[2]+rangeSize};
@@ -333,6 +345,7 @@ public final class SceneBuilder implements io.github.litematicrender.render.Stre
             // Blocks whose appearance comes from a renderer rather than a model contribute nothing
             // above, so heads and sign text are emitted separately.
             this.emitBlockEntities(mesh, region, off, entityGeometry);
+            if(editingCells!=null)continue;
             java.util.List<Integer> indices=null;if(range!=null){indices=new java.util.ArrayList<>();for(var entry:entitySections.get(ri).entrySet()){var p=entry.getKey();if(p.x()>=range.x()&&p.y()>=range.y()&&p.z()>=range.z()&&p.x()*16<range.x()*16+rangeSize&&p.y()*16<range.y()*16+rangeSize&&p.z()*16<range.z()*16+rangeSize)indices.addAll(entry.getValue());}}
             for(int ei=0;ei<(indices==null?region.entities.size():indices.size());ei++) {
                 int index=indices==null?ei:indices.get(ei);

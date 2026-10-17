@@ -2,6 +2,7 @@
 let bindingCaptureAction=null;
 const keysDialog=$('shortcutDialog'),commandsDialog=$('commandsDialog');
 function refreshShortcutHints(){
+  window.projectionEditor?.refreshHints();
   els.flyBtn.textContent=`${state.fly?'退出':'进入'}漫游 (${shortcutHint('fly')})`;
   els.fullscreen.textContent=`${state.fullscreen?'退出全屏':'全屏'} (${shortcutHint('fullscreen')})`;
   selectionUi.enabled.parentElement.lastChild.textContent=`选择渲染工具 (${shortcutHint('selection')})`;
@@ -24,6 +25,7 @@ function cancelBinding(){bindingCaptureAction=null;$('cancelBinding').classList.
 async function bindShortcut(action,code){
   if(!validShortcut(code)){$('shortcutFeedback').textContent='该按键暂不支持，请换一个。';return;}
   if(code.startsWith('Mouse')&&!['corner1','corner2','inspect'].includes(action)){$('shortcutFeedback').textContent='这个操作请选择键盘按键。';return;}
+  if(code.startsWith('Wheel')&&!wheelShortcutAction(action)){$('shortcutFeedback').textContent='滚轮可用于更改投影的物品选择和背包操作。';return;}
   const separateScope=id=>id==='inspect'&&['corner1','corner2'].includes(action)||action==='inspect'&&['corner1','corner2'].includes(id);
   const conflict=SHORTCUT_ACTIONS.find(([id])=>id!==action&&!separateScope(id)&&shortcutBindings[id].includes(code));
   if(conflict){$('shortcutFeedback').textContent=`${shortcutLabel(code)} 已用于“${conflict[1]}”，请先修改该项或选择其他键。`;return;}
@@ -54,4 +56,5 @@ window.addEventListener('keyup',event=>shortcutHeldKeys.delete(normalizedKey(eve
 window.addEventListener('blur',()=>shortcutHeldKeys.clear());
 keysDialog.addEventListener('mousedown',event=>{if(bindingCaptureAction&&!event.target.closest('button')){event.preventDefault();bindShortcut(bindingCaptureAction,'Mouse'+event.button);}});
 keysDialog.addEventListener('contextmenu',event=>event.preventDefault());
+keysDialog.addEventListener('wheel',event=>{if(bindingCaptureAction&&event.deltaY){event.preventDefault();event.stopImmediatePropagation();bindShortcut(bindingCaptureAction,event.deltaY<0?'WheelUp':'WheelDown');}},{passive:false});
 window.__uiReady.then(()=>{refreshShortcutHints();renderShortcutRows();});

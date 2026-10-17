@@ -1,0 +1,25 @@
+import io.github.litematicrender.serve.*;
+import io.github.litematicrender.schematic.*;
+import io.github.litematicrender.nbt.*;
+import io.github.litematicrender.nbt.io.NbtFileUtils;
+import java.nio.file.*;
+import java.util.*;
+public class PlacementInventoryRegression {
+ static void check(boolean ok,String message){if(!ok)throw new AssertionError(message);}
+ static Map<String,Object> block(int x,int y,int z,String id,Map<String,String> states){return Map.of("position",List.of(x,y,z),"id",id,"states",states);}
+ static Map<String,Object> container(RenderEngine e,int x,int y,int z){return (Map<String,Object>)e.inspectPosition(new int[]{x,y,z}).get("container");}
+ public static void main(String[] args)throws Exception{
+  Path home=Path.of(args[0]).toAbsolutePath(),out=home.resolve("tools/verify/placement-inventory-output");Files.createDirectories(out);Path source=out.resolve("containers.litematic");
+  var cells=new ArrayList<Object>();cells.add(Map.of("x",0,"y",0,"z",0,"id","chest","states",Map.of("facing","north","type","single","waterlogged","false")));cells.add(Map.of("x",3,"y",0,"z",0,"id","hopper","states",Map.of("facing","down","enabled","true")));cells.add(Map.of("x",0,"y",-1,"z",0,"id","stone"));BoardSchematic.write(source,cells);
+  var root=NbtFileUtils.readCompressed(source);var r=root.getCompound("Regions").orElseThrow().getCompound("设计").orElseThrow();var chestItems=new NbtList();chestItems.add(new NbtCompound().putInt("Slot",0).putString("id","minecraft:diamond").putInt("count",12).put("components",new NbtCompound().putString("minecraft:custom_name","Saved diamond").putString("minecraft:custom_data","x".repeat(30000)+"COMPLETE_END")));chestItems.add(new NbtCompound().putInt("Slot",26).putString("id","minecraft:diamond").putInt("count",5).put("components",new NbtCompound().putString("minecraft:custom_name","Saved diamond").putString("minecraft:custom_data","x".repeat(30000)+"COMPLETE_END")));var hopperItems=new NbtList();hopperItems.add(new NbtCompound().putInt("Slot",4).putString("id","minecraft:iron_ingot").putInt("count",32));var entities=new NbtList();entities.add(new NbtCompound().putInt("x",0).putInt("y",1).putInt("z",0).putString("id","minecraft:chest").put("Items",chestItems));entities.add(new NbtCompound().putInt("x",3).putInt("y",1).putInt("z",0).putString("id","minecraft:hopper").put("Items",hopperItems));r.put("TileEntities",entities);NbtFileUtils.writeCompressed(source,root);byte[] original=Files.readAllBytes(source);
+  try(var e=new RenderEngine(home)){
+   e.loadResources(e.defaultPackRoot());e.open(source);var inventory=container(e,0,0,0);check(inventory.get("slots").equals(27),"single chest slots");var slots=(List<Map<String,Object>>)inventory.get("slotItems");check(slots.size()==2&&slots.get(1).get("displaySlot").equals(26),"distinct source slots");check(((Number)slots.get(0).get("count")).intValue()==12,"count remains per stack");check(slots.get(0).get("data").toString().contains("COMPLETE_END"),"full item components not truncated");check(((List<?>)inventory.get("items")).size()==1,"legacy grouping kept");check(container(e,3,0,0).get("slots").equals(5),"hopper capacity");
+   String firstPath=(String)e.editBlock(block(0,0,-1,"dispenser",Map.of("facing","west","triggered","false"))).get("path");check(firstPath.equals(source.toString()),"edit writes no working file");
+   var patch=e.editPatch(out.resolve("patch"),null,null);check(((List<?>)patch.get("cells")).size()==27,"sparse halo only");check(((Number)patch.get("quads")).intValue()<200,"local mesh size");
+   var batch=List.of(block(0,0,0,"chest",Map.of("facing","north","type","left","waterlogged","false")),block(1,0,0,"chest",Map.of("facing","north","type","right","waterlogged","false")));e.editBlock(Map.of("changes",batch));inventory=container(e,0,0,0);check(inventory.get("slots").equals(54),"double chest slots");slots=(List<Map<String,Object>>)inventory.get("slotItems");check(slots.get(0).get("displaySlot").equals(27)&&slots.get(1).get("displaySlot").equals(53),"vanilla right half is first inventory");check(container(e,1,0,0).get("slots").equals(54),"both halves open same inventory");
+   e.editBlock(Map.of("action","undo"));check(container(e,0,0,0).get("slots").equals(27),"pair is one undo step");check(e.inspectPosition(new int[]{1,0,0}).get("hit").equals(false),"undo removes new half");e.editBlock(Map.of("action","redo"));check(container(e,1,0,0).get("status").equals("saved"),"new half is saved empty and original data kept");
+   var commit=e.commitEdits();check(commit.get("changed").equals(true),"exit flush");check(e.commitEdits().get("changed").equals(false),"second flush does nothing");check(Arrays.equals(original,Files.readAllBytes(source)),"original unchanged");Path exported=out.resolve("export.litematic");e.exportEdited(exported);e.open(exported);check(container(e,0,0,0).get("slots").equals(54),"pair persisted on export");
+  }
+  System.out.println("PASS: per-slot inventory / unchanged data, 27 / 54 / 5 slots, vanilla double chest order, sparse patch, atomic pair undo / redo, one deferred commit, source preservation and export");
+ }
+}

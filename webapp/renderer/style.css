@@ -1840,3 +1840,12 @@ body.flying #btnFly {
   font-size: 13px;
 }
 
+
+/* Preserve item artwork while displaying the saved inventory in its real slots. */
+.block-inspector:has(.inventory-grid){width:min(460px,calc(100% - 40px))}
+.inventory-grid{display:grid;gap:3px;padding:8px;background:rgba(0,0,0,.24);border:1px solid var(--line-card);border-radius:6px}
+.inventory-grid-9{grid-template-columns:repeat(9,minmax(0,1fr))}.inventory-grid-5{grid-template-columns:repeat(5,minmax(0,1fr));max-width:260px;margin:auto}.inventory-grid-3{grid-template-columns:repeat(3,minmax(0,1fr));max-width:160px;margin:auto}.inventory-grid-1{grid-template-columns:1fr;max-width:50px}.inventory-grid-2{grid-template-columns:repeat(2,minmax(0,1fr));max-width:110px}
+.inventory-cell{position:relative;aspect-ratio:1;min-width:0;width:100%;margin:0;padding:3px;border-radius:2px;background:#272c36;border:1px solid #4a5261;box-shadow:inset 2px 2px 0 rgba(0,0,0,.3),inset -1px -1px 0 rgba(255,255,255,.1)}
+.inventory-cell.empty{opacity:1;background:#232832}.inventory-cell:hover:not(:disabled){background:#454e5d;outline:1px solid var(--accent)}
+.inventory-cell .item-icon{display:block;width:100%;height:100%;object-fit:contain;image-rendering:pixelated;pointer-events:none}
+.inventory-cell .item-count{position:absolute;right:2px;bottom:1px;font-size:12px;font-weight:bold;color:white;text-shadow:1px 1px black,-1px 1px black;pointer-events:none;line-height:1}

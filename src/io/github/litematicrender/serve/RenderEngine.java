@@ -78,6 +78,11 @@ public final class RenderEngine implements AutoCloseable {
     /** Cached parse of the currently open schematic, keyed by path + mtime + size. */
     private LitematicaSchematic schematic;
     private Path schematicPath;
+    private io.github.litematicrender.schematic.ProjectionEdits edits;
+    private Path editWorkingPath;
+    private boolean editsDirty;
+    private SceneBuilder editBaseBuilder;
+    private int editRevision;
     private long schematicStamp;
     private String schematicDigest,loadedResourceFingerprint;
     private SceneCache diskCache;
@@ -123,6 +128,83 @@ public final class RenderEngine implements AutoCloseable {
     }
     public synchronized void invalidateScene() { this.scene=null;this.sceneKey=null; }
     public synchronized void releaseStreaming(){clearStream();}
+    /** Bounded pages avoid retaining millions of matching coordinates. */
+    public synchronized Map<String,Object> searchBlocks(String query,int offset)throws Exception {
+        ensureResources();if(schematic==null)throw new IllegalStateException("请先打开投影");
+        query=query.trim().toLowerCase(java.util.Locale.ROOT);if(query.isEmpty()||query.length()>128||offset<0)throw new IllegalArgumentException("请输入有效的方块名称或 ID");
+        var names=new java.util.HashMap<String,String>();
+        for(String lang:List.of("en_us","zh_cn")){var stack=resources.getResourceStack("minecraft","lang/"+lang+".json");for(int i=stack.size()-1;i>=0;i--)try{io.github.litematicrender.util.MiniJson.parseObject(new String(stack.get(i),java.nio.charset.StandardCharsets.UTF_8)).forEach((k,v)->{if(v instanceof String t)names.put(k,t);});}catch(Exception ignored){}}
+        final String q=query;long[] count={0};var results=new ArrayList<Map<String,Object>>();
+        for(var region:schematic.regions().values()){
+            var matches=new java.util.HashMap<String,Boolean>();var labels=new java.util.HashMap<String,String>();
+            for(var state:region.blocks.palette){String id=state.blockId;String name=names.getOrDefault("block."+id.replace(':','.'),id);labels.put(id,name);matches.put(id,id.toLowerCase(java.util.Locale.ROOT).contains(q)||name.toLowerCase(java.util.Locale.ROOT).contains(q));}
+            if(!matches.containsValue(true))continue;var origin=region.blockOrigin();
+            region.blocks.forEachNonAir((x,y,z,b)->{if(!matches.getOrDefault(b.blockId,false))return;long n=count[0]++;if(n>=offset&&results.size()<10000)results.add(Map.of("position",List.of(origin.x()+x,origin.y()+y,origin.z()+z),"id",b.blockId,"name",labels.get(b.blockId),"state",b.propertyString()));});
+        }
+        return Map.of("total",count[0],"offset",offset,"limit",10000,"results",results);
+    }
+    public synchronized Map<String,Object> editPick(double[] origin,double[] direction,double maximum,double[] min,double[] max)throws Exception {
+        if(schematic==null)throw new IllegalStateException("请先打开投影");
+        double length=0;for(int a=0;a<3;a++){if(!Double.isFinite(origin[a])||Math.abs(origin[a])>30000000||!Double.isFinite(direction[a]))throw new IllegalArgumentException("无效射线");length+=direction[a]*direction[a];}
+        length=Math.sqrt(length);if(length<1e-12||!Double.isFinite(length)||!Double.isFinite(maximum)||maximum<=0)throw new IllegalArgumentException("无效射线");maximum=Math.min(65536,maximum);
+        int[] cell=new int[3],step=new int[3],face={0,0,0};double[] next=new double[3],delta=new double[3];
+        for(int a=0;a<3;a++){double d=direction[a]/length;cell[a]=(int)Math.floor(origin[a]);step[a]=d>0?1:d<0?-1:0;delta[a]=d==0?Double.POSITIVE_INFINITY:Math.abs(1/d);next[a]=d==0?Double.POSITIVE_INFINITY:((d>0?cell[a]+1:cell[a])-origin[a])/d;}
+        var regions=new ArrayList<>(schematic.regions().values());double distance=0;
+        for(int n=0;n<200000&&distance<=maximum;n++){
+            boolean visible=true;for(int a=0;a<3;a++)if(min!=null&&(cell[a]<min[a]||cell[a]>=max[a]))visible=false;
+            if(visible)for(int i=regions.size()-1;i>=0;i--){var r=regions.get(i);var p=r.blockOrigin();int x=cell[0]-p.x(),y=cell[1]-p.y(),z=cell[2]-p.z();if(x<0||y<0||z<0||x>=r.blocks.sizeX||y>=r.blocks.sizeY||z>=r.blocks.sizeZ)continue;
+                var state=r.blocks.get(x,y,z);if(state.isAir())break;
+                return Map.of("hit",true,"position",List.of(cell[0],cell[1],cell[2]),"face",List.of(face[0],face[1],face[2]),"id",state.blockId,"states",r.storedProperties(x,y,z),"point",List.of(origin[0]+direction[0]/length*distance,origin[1]+direction[1]/length*distance,origin[2]+direction[2]/length*distance));
+            }
+            int a=next[0]<=next[1]&&next[0]<=next[2]?0:next[1]<=next[2]?1:2;distance=next[a];cell[a]+=step[a];next[a]+=delta[a];java.util.Arrays.fill(face,0);face[a]=-step[a];
+        }
+        return Map.of("hit",false);
+    }
+    private io.github.litematicrender.nbt.NbtCompound editValue(Map<String,Object> request){
+        String id=io.github.litematicrender.util.MiniJson.asString(request.get("id"),"minecraft:air");if(!id.contains(":"))id="minecraft:"+id;if(!id.matches("[a-z0-9_.-]+:[a-z0-9_./-]+"))throw new IllegalArgumentException("无效方块 ID");
+        var value=new io.github.litematicrender.nbt.NbtCompound().putString("Name",id);var props=new io.github.litematicrender.nbt.NbtCompound();var input=io.github.litematicrender.util.MiniJson.asObject(request.get("states"));if(input!=null){if(input.size()>64)throw new IllegalArgumentException("状态过多");for(var e:input.entrySet()){String text=String.valueOf(e.getValue());if(!e.getKey().matches("[a-z0-9_]+")||!text.matches("[a-z0-9_-]{1,64}"))throw new IllegalArgumentException("无效状态");props.putString(e.getKey(),text);}}return value.put("Properties",props);
+    }
+    private static int[] editPosition(Object raw){var values=io.github.litematicrender.util.MiniJson.asArray(raw);if(values==null||values.size()!=3)throw new IllegalArgumentException("无效坐标");int[] xyz=new int[3];for(int i=0;i<3;i++){Object value=values.get(i);if(!(value instanceof Number num)||!Double.isFinite(num.doubleValue())||num.doubleValue()!=num.intValue()||Math.abs(num.doubleValue())>30000000)throw new IllegalArgumentException("坐标超出范围");xyz[i]=num.intValue();}return xyz;}
+    public synchronized Map<String,Object> editBlock(Map<String,Object> request)throws Exception {
+        if(schematic==null)throw new IllegalStateException("请先打开投影");
+        if(edits==null){edits=new io.github.litematicrender.schematic.ProjectionEdits(schematicPath);editWorkingPath=home.resolve("renders/.edit/current.litematic").toAbsolutePath().normalize();}
+        if(!editsDirty){var base=streamBuilder!=null?streamBuilder:sceneBuilder;if(base!=null)editBaseBuilder=base;}
+        var checkpoint=edits.checkpoint();var previous=schematic;
+        try{
+            String action=io.github.litematicrender.util.MiniJson.asString(request.get("action"),"set");boolean changed=false;
+            if(action.equals("undo"))changed=edits.undo();else if(action.equals("redo"))changed=edits.redo();else if(action.equals("set")){
+                var changes=io.github.litematicrender.util.MiniJson.asArray(request.get("changes"));if(changes==null)changes=List.of(request);if(changes.size()>16)throw new IllegalArgumentException("一次修改方块过多");
+                for(Object raw:changes){var change=io.github.litematicrender.util.MiniJson.asObject(raw);if(change==null)throw new IllegalArgumentException("无效修改");changed|=edits.set(editPosition(change.get("position")),editValue(change));}edits.squash(checkpoint,changed);
+            }else throw new IllegalArgumentException("未知编辑操作");
+            var result=new LinkedHashMap<String,Object>(edits.status());result.put("changed",changed);result.put("path",schematicPath.toAbsolutePath().toString());
+            if(changed){schematic=io.github.litematicrender.schematic.LitematicaSchematic.fromData(edits.data());schematic.materialize(registry);editsDirty=true;editRevision++;materialKey=null;result.put("revision",editRevision);result.put("info",editInfo());}
+            return result;
+        }catch(Exception error){edits.restore(checkpoint);schematic=previous;throw error;}
+    }
+    private Map<String,Object> editInfo(){var md=schematic.metadata();return Map.of("name",md.name,"author","LiteKinda","size",Map.of("x",md.enclosingSize.x(),"y",md.enclosingSize.y(),"z",md.enclosingSize.z()),"regionCount",md.regionCount,"totalBlocks",md.totalBlocks);}
+    public synchronized Map<String,Object> commitEdits()throws Exception {
+        if(!editsDirty)return Map.of("changed",false,"path",schematicPath==null?"":schematicPath.toAbsolutePath().toString());
+        edits.write(editWorkingPath);var info=open(editWorkingPath);editsDirty=false;var result=new LinkedHashMap<String,Object>();result.put("changed",true);result.put("path",editWorkingPath.toString());result.put("info",info);return result;
+    }
+    public synchronized Map<String,Object> editStates(List<Object> positions){
+        var result=new ArrayList<Map<String,Object>>();if(positions==null||positions.size()>64)throw new IllegalArgumentException("无效坐标列表");
+        for(Object raw:positions){int[] p=editPosition(raw);var state=stateAt(p);result.add(Map.of("position",List.of(p[0],p[1],p[2]),"id",state.blockId,"states",statePropertiesAt(p)));}return Map.of("blocks",result);
+    }
+    private io.github.litematicrender.world.BlockState stateAt(int[] p){var regions=new ArrayList<>(schematic.regions().values());for(int i=regions.size()-1;i>=0;i--){var r=regions.get(i);var o=r.blockOrigin();int x=p[0]-o.x(),y=p[1]-o.y(),z=p[2]-o.z();if(x>=0&&y>=0&&z>=0&&x<r.blocks.sizeX&&y<r.blocks.sizeY&&z<r.blocks.sizeZ)return r.blocks.get(x,y,z);}return io.github.litematicrender.world.BlockState.air();}
+    private Map<String,String> statePropertiesAt(int[] p){var regions=new ArrayList<>(schematic.regions().values());for(int i=regions.size()-1;i>=0;i--){var r=regions.get(i);var o=r.blockOrigin();int x=p[0]-o.x(),y=p[1]-o.y(),z=p[2]-o.z();if(x>=0&&y>=0&&z>=0&&x<r.blocks.sizeX&&y<r.blocks.sizeY&&z<r.blocks.sizeZ)return r.storedProperties(x,y,z);}return Map.of();}
+    public synchronized Map<String,Object> editPatch(Path directory,double[] min,double[] max)throws Exception {
+        if(edits==null)return Map.of("empty",true);Files.createDirectories(directory);var cells=edits.previewCells();
+        var builder=new SceneBuilder(registry,baker,colormaps,atlas);for(var r:schematic.regions().values()){var o=r.blockOrigin();builder.addRegion(r,new int[]{o.x(),o.y(),o.z()});}
+        var mesh=builder.buildEditing(cells,editBaseBuilder,null,null);Path full=directory.resolve("patch.bin"),image=directory.resolve("atlas.png");MeshExporter.write(mesh,atlas,full);
+        var result=new LinkedHashMap<String,Object>();result.put("mesh",full.toString());result.put("atlas",image.toString());result.put("quads",mesh.quadCount);result.put("cells",cells.stream().map(p->List.of(p.x(),p.y(),p.z())).toList());result.put("revision",editRevision);
+        if(min!=null){var selected=new SceneBuilder(registry,baker,colormaps,atlas);for(var r:schematic.regions().values()){var o=r.blockOrigin();selected.addRegion(r,new int[]{o.x(),o.y(),o.z()});}var selectedMesh=selected.buildEditing(cells,builder,min,max);Path path=directory.resolve("selection.bin");MeshExporter.write(selectedMesh,atlas,path);result.put("selectionMesh",path.toString());}
+        atlas.stitched.writePng(image);return result;
+    }
+    public synchronized Map<String,Object> inspectPosition(int[] position){return new BlockInspector(schematic,resources).inspectPosition(position[0],position[1],position[2]);}
+    public synchronized Map<String,Object> exportEdited(Path output)throws Exception{
+        if(schematic==null)throw new IllegalStateException("请先打开投影");
+        var session=edits!=null?edits:new io.github.litematicrender.schematic.ProjectionEdits(schematicPath);session.write(output);return Map.of("path",output.toAbsolutePath().toString(),"author","LiteKinda");
+    }
     /** Voxel selection needs no geometry, lighting or entity inspection. */
     public synchronized Map<String,Object> selectBlock(double[] origin,double[] direction,double maximum)throws Exception {
         if(schematic==null)throw new IllegalStateException("请先打开投影");
@@ -321,6 +403,7 @@ public final class RenderEngine implements AutoCloseable {
     public synchronized Map<String, Object> open(Path file) throws Exception {
         ensureResources();
         selectedScene=null;selectedSceneKey=null;
+        if(edits!=null&&!file.toAbsolutePath().normalize().equals(editWorkingPath)){edits=null;editWorkingPath=null;editsDirty=false;editBaseBuilder=null;this.schematic=null;}
         LitematicaSchematic schem = loadSchematic(file);
         LitematicaSchematic.Metadata md = schem.metadata();
 

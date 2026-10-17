@@ -1,0 +1,30 @@
+import io.github.litematicrender.serve.RenderEngine;
+import io.github.litematicrender.schematic.*;
+import io.github.litematicrender.nbt.*;
+import io.github.litematicrender.nbt.io.NbtFileUtils;
+import java.nio.file.*;
+import java.util.*;
+public class ProjectionEditRegression {
+ static void check(boolean value,String text){if(!value)throw new AssertionError(text);}
+ static Map<String,Object> set(int x,int y,int z,String id,Map<String,String> props){return Map.of("position",List.of(x,y,z),"id",id,"states",props);}
+ public static void main(String[] args)throws Exception{
+  Path home=Path.of(args[0]).toAbsolutePath(),out=home.resolve("tools/verify/projection-edit-output");Files.createDirectories(out);Path source=out.resolve("original.litematic");
+  var cells=new ArrayList<Object>();cells.add(Map.of("x",0,"y",0,"z",0,"id","dispenser","states",Map.of("facing","north","triggered","false")));cells.add(Map.of("x",0,"y",0,"z",3,"id","stone"));cells.add(Map.of("x",2,"y",0,"z",0,"id","chest","states",Map.of("facing","north","type","single","waterlogged","false")));cells.add(Map.of("x",-2,"y",-1,"z",-3,"id","stone"));
+  BoardSchematic.write(source,cells);var root=NbtFileUtils.readCompressed(source);root.putString("CustomRoot","preserve me");var region=root.getCompound("Regions").orElseThrow().getCompound("设计").orElseThrow();var items=new NbtList();items.add(new NbtCompound().putString("id","minecraft:diamond").putInt("count",12));var containers=new NbtList();containers.add(new NbtCompound().putInt("x",4).putInt("y",1).putInt("z",3).putString("id","minecraft:chest").put("Items",items).putString("CustomData","keep"));region.put("TileEntities",containers);var entities=new NbtList();entities.add(new NbtCompound().putString("id","minecraft:pig").putString("CustomName","keep entity"));region.put("Entities",entities);NbtFileUtils.writeCompressed(source,root);byte[] original=Files.readAllBytes(source);
+  try(var engine=new RenderEngine(home)){
+   engine.loadResources(engine.defaultPackRoot());engine.open(source);var hit=engine.editPick(new double[]{.5,.5,6},new double[]{0,0,-1},20,null,null);check(hit.get("position").equals(List.of(0,0,3)),"front pick");check(hit.get("face").equals(List.of(0,0,1)),"placement normal");
+   hit=engine.editPick(new double[]{.5,.5,6},new double[]{0,0,-1},20,new double[]{0,0,0},new double[]{1,1,1});check(hit.get("position").equals(List.of(0,0,0)),"partial render pick through outside blocks");
+   var edit=engine.editBlock(set(0,0,0,"dispenser",Map.of("facing","east","triggered","true")));check(edit.get("changed").equals(true),"changed");
+   engine.editBlock(set(2,0,0,"chest",Map.of("facing","south","type","single","waterlogged","true")));engine.editBlock(set(8,0,0,"oak_stairs",Map.of("facing","east","half","top","shape","inner_left","waterlogged","true")));
+   engine.editBlock(set(-2,-1,-3,"air",Map.of()));Path exported=out.resolve("edited.litematic");engine.exportEdited(exported);var saved=NbtFileUtils.readCompressed(exported);check(saved.getStringOrDefault("CustomRoot","").equals("preserve me"),"unknown root data");check(saved.getCompound("Metadata").orElseThrow().getStringOrDefault("Author","").equals("LiteKinda"),"author");var old=saved.getCompound("Regions").orElseThrow().getCompound("设计").orElseThrow();check(old.getList("Entities").orElseThrow().size()==1,"entities preserved");check(old.getList("TileEntities").orElseThrow().size()==1,"same block state kept inventory");
+   check(((Number)engine.searchBlocks("oak_stairs",0).get("total")).intValue()==1,"placed outside source");check(((Number)engine.searchBlocks("stone",0).get("total")).intValue()==1,"deleted negative block");
+   engine.editBlock(Map.of("action","undo"));check(((Number)engine.searchBlocks("stone",0).get("total")).intValue()==2,"undo restores negative block");engine.editBlock(Map.of("action","redo"));check(((Number)engine.searchBlocks("stone",0).get("total")).intValue()==1,"redo deletes again");
+   engine.editBlock(set(2,0,0,"stone",Map.of()));engine.exportEdited(exported);old=NbtFileUtils.readCompressed(exported).getCompound("Regions").orElseThrow().getCompound("设计").orElseThrow();check(old.getList("TileEntities").orElseThrow().isEmpty(),"replacement removed stale container");engine.editBlock(Map.of("action","undo"));engine.exportEdited(exported);old=NbtFileUtils.readCompressed(exported).getCompound("Regions").orElseThrow().getCompound("设计").orElseThrow();check(old.getList("TileEntities").orElseThrow().size()==1,"undo restored full container");
+   check(Arrays.equals(original,Files.readAllBytes(source)),"source overwritten");engine.open(source);var empty=engine.editBlock(Map.of("action","undo"));check(empty.get("changed").equals(false),"new file resets history");
+   // Original packed width changes from 2 to 3 bits on the first new state; verify every cell after growth.
+   engine.editBlock(set(-2,-1,-3,"redstone_wire",Map.of("power","15","north","none","south","none","east","none","west","none")));check(((Number)engine.searchBlocks("dispenser",0).get("total")).intValue()==1,"repack preserved other cells");
+   Path negative=out.resolve("negative.litematic");var neg=NbtFileUtils.readCompressed(source);var r=neg.getCompound("Regions").orElseThrow().getCompound("设计").orElseThrow();var size=SubRegion.readBlockPos(r,"Size");var position=SubRegion.readBlockPos(r,"Position");r.put("Size",new NbtCompound().putInt("x",-size.x()).putInt("y",size.y()).putInt("z",size.z()));r.put("Position",new NbtCompound().putInt("x",position.x()+size.x()-1).putInt("y",position.y()).putInt("z",position.z()));NbtFileUtils.writeCompressed(negative,neg);engine.open(negative);engine.editBlock(set(-2,-1,-3,"oak_planks",Map.of()));check(((Number)engine.searchBlocks("oak_planks",0).get("total")).intValue()==1,"negative-size edit");
+  }
+  System.out.println("PASS: face picking, partial selection, 3D states, palette growth, negative coordinates / sizes, outside placement, undo / redo, inventories, entities, custom data, LiteKinda export and source preservation");
+ }
+}

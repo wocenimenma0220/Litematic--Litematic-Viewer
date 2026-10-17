@@ -53,8 +53,28 @@ public final class PackedLongArray {
     private PackedLongArray(int length,Page[] pages,long retainedBytes){this.length=length;this.pages=pages;this.dense=null;this.retainedBytes=retainedBytes;}
     private PackedLongArray(long[] dense){this.length=dense.length;this.dense=dense;this.pages=null;this.retainedBytes=8L*dense.length;}
     public static PackedLongArray wrap(long[] words){return new PackedLongArray(words);}
+    private static PackedLongArray paged(long[] dense){
+        Page[] pages=new Page[(dense.length+PAGE_WORDS-1)/PAGE_WORDS];long cost=32+pages.length*8L;
+        for(int i=0;i<pages.length;i++){
+            int begin=i*PAGE_WORDS,count=Math.min(PAGE_WORDS,dense.length-begin);long first=dense[begin];boolean uniform=true;for(int j=1;j<count;j++)if(dense[begin+j]!=first){uniform=false;break;}
+            byte[] raw=null;if(!uniform){raw=new byte[count*8];ByteBuffer.wrap(raw).asLongBuffer().put(dense,begin,count);}pages[i]=new Page(first,raw,false,count);cost+=40+(raw==null?0:raw.length);
+        }
+        return new PackedLongArray(dense.length,pages,cost);
+    }
     public int length(){return length;}
     public long retainedBytes(){return retainedBytes;}
+    /** Copy only touched pages; edit history shares all other immutable page payloads. */
+    public PackedLongArray withWords(java.util.Map<Integer,Long> changes){
+        if(dense!=null)return paged(dense).withWords(changes);
+        Page[] next=pages.clone();var grouped=new java.util.HashMap<Integer,long[]>();
+        changes.forEach((i,v)->{
+            if(i<0||i>=length)throw new IllegalArgumentException("方块索引越界");
+            int p=i/PAGE_WORDS;long[] words=grouped.computeIfAbsent(p,k->{Page page=pages[k];if(page.data!=null)return page.decode().clone();long[] values=new long[page.words];Arrays.fill(values,page.uniform);return values;});words[i%PAGE_WORDS]=v;
+        });
+        long cost=retainedBytes;
+        for(var e:grouped.entrySet()){Page old=next[e.getKey()];byte[] raw=new byte[e.getValue().length*8];ByteBuffer.wrap(raw).asLongBuffer().put(e.getValue());next[e.getKey()]=new Page(0,raw,false,e.getValue().length);cost+=raw.length-(old.data==null?0:old.data.length);}
+        return new PackedLongArray(length,next,cost);
+    }
     public long get(int index){
         if(index<0||index>=length)return 0;if(dense!=null)return dense[index];
         Page page=pages[index/PAGE_WORDS];return page.data==null?page.uniform:page.decode()[index%PAGE_WORDS];

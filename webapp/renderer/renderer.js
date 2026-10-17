@@ -306,6 +306,7 @@ function updateProgressiveStatus(stats){
   setStatus(stats.running?'模型准备完成，正在载入当前视角…':stats.budgetLimited?'已显示当前预算内的细节，可调整视角或提高缓存上限。':'3D 视图已就绪。',stats.running||stats.budgetLimited?'':'ok');
 }
 async function buildView(options = {}) {
+  if(window.projectionEditor?.dirty&&!options.editsCommitted)await window.projectionEditor.flush(false);
   if(state.stopping)return;
   if(state.engineNeedsOpen){await loadFile(state.file);return;}
   if(typeof invalidateSelectionMesh==='function')invalidateSelectionMesh();
@@ -604,6 +605,10 @@ function drawView(interactive = false) {
   cam.focus=state.selection?.bounds({min:view.min,max:view.max})||null;
   cam.selectionBox=state.selection?.enabled?state.selection.range({min:view.min,max:view.max}):null;
   cam.background = background;
+  cam.searchDim=!!(window.blockSearch?.active&&$('blockSearchDim').checked);
+  cam.searchRevision=window.blockSearch?.revision||0;
+  cam.editTarget=window.projectionEditor?.enabled?window.projectionEditor.target:null;
+  if(window.projectionEditor?.dirty)cam.occlusion=false;
   cam.lodEnabled=state.lodPreview;
   if(state.overview){cam.lodEnabled=true;cam.lodLevel=3;}
   if (interactive === true) {
@@ -975,6 +980,7 @@ els.authorLink.addEventListener('click', async event => {
 window.__uiReady = (async () => {
   try {
     const settings = await window.appUi.settings();
+    setConsoleHidden(settings.consoleHidden===true,false);
     state.previewBackend=settings.previewBackend==='cpu'?'cpu':'gpu';
     state.largeProjection=settings.largeProjection===true;els.largeProjection.checked=state.largeProjection;
     state.projectionMode=settings.projectionMode||'auto';$('projectionMode').value=state.projectionMode;
@@ -1005,6 +1011,7 @@ function updateFlyMouseHint() {
   els.flyMouseHint.classList.toggle('hidden',!state.fly);
   els.flyMouseHint.textContent=state.flyLockPending?'正在锁定鼠标…':state.flyLookActive?`鼠标已锁定；${shortcutHint('close')} 释放鼠标并暂停视角。`:`鼠标已释放，视角暂停。点击预览区重新锁定；${shortcutHint('fly')} 退出漫游。`;
   document.body.classList.toggle('mouse-look',state.fly&&state.flyLookActive);
+  window.projectionEditor?.refreshVisibility();
 }
 function pauseFlyLook(release=true) {
   state.flyLockGeneration++;state.flyLockPending=false;
@@ -1167,6 +1174,8 @@ function hasActiveRender() {
     ||(typeof selectionMeshRunning!=='undefined'&&selectionMeshRunning);
 }
 function discardPreview() {
+  window.projectionEditor?.reset();
+  window.blockSearch?.clear();
   ++gpuBuildGeneration;
   invalidateCpuPreview();
   if(typeof invalidateSelectionMesh==='function')invalidateSelectionMesh();
@@ -1183,6 +1192,7 @@ function discardPreview() {
   els.streamInfo.textContent='';els.stats.textContent='—';
 }
 function stopRendering() {
+  if(window.projectionEditor?.dirty)return window.projectionEditor.flush(false).then(()=>stopRendering());
   if(stopRenderPromise)return stopRenderPromise;
   const stopping=++fileOpenGeneration;
   state.stopping=true;state.stopped=true;state.fileOpening=false;state.engineNeedsOpen=!!state.file;
@@ -1242,6 +1252,7 @@ window.addEventListener('drop',event=>{
 });
 
 async function loadFile(file) {
+  if(window.projectionEditor?.dirty)await window.projectionEditor.flush(false);
   const recovery=hasActiveRender()||state.stopping?stopRendering():Promise.resolve();
   const opening=++fileOpenGeneration;
   discardPreview();
@@ -1307,19 +1318,16 @@ function showInspection(result) {
   if(inventory){
     const status={saved:'显示投影已保存的内容物。',empty:'已保存为空容器。',missing:'投影未保存内容物，无法确定是否为空。',loot:'内容物尚未生成，投影只保存了战利品表。',personal:'末影箱内容属于玩家数据，方块投影不包含个人仓库。',partial:inventory.partnerMissing?'另一半不在投影中；只显示现有半箱保存的物品。':'只保存了部分内容物数据；显示已保存的物品。'};
     els.inspectInventoryStatus.textContent=`${inventory.doubleChest?'双箱 · ':''}${inventory.slots?inventory.slots+' 格 · ':''}${status[inventory.status]||''}`;
-    for(const item of inventory.items){
-      const button=document.createElement('button');button.type='button';button.className='inventory-item';button.title=item.id;
-      const slots=item.displaySlots||[item.displaySlot];
-      const slot=document.createElement('span');slot.className='item-slot';slot.textContent=item.stacks>1?item.stacks+' 格':'#'+(item.displaySlot+1);
-      button.title=item.id+' · 槽位 '+slots.map(s=>'#'+(s+1)).join(', ');
-      const image=document.createElement(item.icon?'img':'span');image.className='item-icon';
-      if(item.icon){image.src=item.icon;image.alt='';}else image.textContent='◇';
-      const name=document.createElement('span');name.className='item-name';name.textContent=item.name;
-      const count=document.createElement('span');count.textContent='×'+item.count;
-      button.append(slot,image,name,count);button.addEventListener('click',()=>{
-        els.inspectItemName.textContent=item.name+' · '+item.id+' · ×'+item.count;
-        els.inspectItemData.textContent=dataText(item.stacks>1?{数量合计:item.count,来源槽位:slots.map(s=>s+1),单组保存的数据:item.data}:item.data);els.inspectItemDetails.classList.remove('hidden');els.inspectItemDetails.open=true;
-      });els.inspectItems.append(button);
+    const items=inventory.slotItems||inventory.items,capacity=inventory.slots||Math.max(1,...items.map(item=>item.displaySlot+1)),columns=capacity===5?5:capacity<=3?capacity:9;
+    els.inspectItems.className='inventory-grid inventory-grid-'+columns;els.inspectItems.setAttribute('role','grid');els.inspectItems.setAttribute('aria-label',result.name+' · '+capacity+' 格');
+    const bySlot=new Map(items.map(item=>[item.displaySlot,item]));
+    for(let index=0;index<capacity;index++){
+      const item=bySlot.get(index),button=document.createElement('button');button.type='button';button.className='inventory-cell';button.dataset.slot=String(index);button.setAttribute('role','gridcell');
+      if(!item){button.classList.add('empty');button.disabled=true;button.setAttribute('aria-label','槽位 '+(index+1)+'，空');els.inspectItems.append(button);continue;}
+      button.title=item.name+' · '+item.id+' · 槽位 '+(index+1)+' · ×'+item.count;button.setAttribute('aria-label',button.title);
+      const image=document.createElement(item.icon?'img':'span');image.className='item-icon';if(item.icon){image.src=item.icon;image.alt='';}else image.textContent='◇';
+      const count=document.createElement('span');count.className='item-count';count.textContent=item.count>1?String(item.count):'';button.append(image,count);
+      button.addEventListener('click',()=>{els.inspectItemName.textContent=item.name+' · '+item.id+' · ×'+item.count+' · 槽位 '+(index+1);els.inspectItemData.textContent=JSON.stringify(item.data,null,2);els.inspectItemDetails.classList.remove('hidden');els.inspectItemDetails.open=true;});els.inspectItems.append(button);
     }
   }
   els.inspectDataDetails.classList.toggle('hidden',!result.data);els.inspectDataDetails.open=false;
@@ -1799,3 +1807,20 @@ $('materialExport').addEventListener('click',async()=>{
     const result=await window.engine.exportMaterials({out:file,scope,waterAsIce:materialWaterAsIce});$('materialStatus').textContent='已导出：'+result.files.join('；');log('材料表已导出：'+result.files.join('；'));
   }catch(error){$('materialStatus').textContent='导出失败：'+error.message;}finally{$('materialExport').disabled=false;}
 });
+
+function setConsoleHidden(hidden,persist=true){
+  $('debugConsole').classList.toggle('hidden',hidden);$('btnToggleConsole').textContent=hidden?'显示调试信息':'隐藏调试信息';$('btnToggleConsole').setAttribute('aria-expanded',String(!hidden));
+  if(persist)window.appUi.setConsoleHidden(hidden).catch(error=>log('保存调试信息显示设置失败：'+error.message,'err'));lastViewKey=null;drawView();
+}
+$('btnToggleConsole').addEventListener('click',()=>setConsoleHidden(!$('debugConsole').classList.contains('hidden')));
+let containerPress=null;
+els.viewport.addEventListener('pointerdown',event=>{if(event.button!==2||window.projectionEditor?.enabled||state.selection?.enabled||event.target.closest('.block-inspector'))return;containerPress={x:event.clientX,y:event.clientY,yaw:state.flyYaw,pitch:state.flyPitch};},true);
+els.viewport.addEventListener('pointerup',event=>{
+  const press=containerPress;containerPress=null;if(event.button!==2||!press||window.projectionEditor?.enabled||state.selection?.enabled||Math.hypot(event.clientX-press.x,event.clientY-press.y)>4||Math.abs(state.flyYaw-press.yaw)+Math.abs(state.flyPitch-press.pitch)>.03)return;
+  openContainerAt(event.clientX,event.clientY).catch(error=>log('打开容器失败：'+error.message,'err'));
+},true);
+async function openContainerAt(clientX,clientY){
+  if(!state.viewReady||state.scenePreparing||state.overview)return;const rect=els.gl.getBoundingClientRect();drawView();const ray=state.view.rayFromScreen(state.fly?rect.left+rect.width/2:clientX,state.fly?rect.top+rect.height/2:clientY,true);if(!ray)return;
+  const generation=state.inspectGeneration,view=state.view,hit=await window.engine.editPick({...ray,selection:state.selection.bounds(selectionWorld())||undefined});if(!hit.hit||view!==state.view||generation!==state.inspectGeneration)return;
+  const result=await window.engine.inspectPosition(hit.position);if(result.container&&view===state.view&&generation===state.inspectGeneration)showInspection(result);
+}

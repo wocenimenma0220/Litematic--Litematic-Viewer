@@ -95,3 +95,27 @@ Java 堆上限默认根据机器总内存与启动时可用内存选择。可通
 发布前同步 `package.ps1`、`webapp/package.json`、`webapp/package-lock.json`、`tools/launcher/Launcher.cs` 中的版本，并更新 README 和更新记录。文档修改不需要重编译程序或改写已发布的版本标签。
 
 渲染和大投影技术细节见 [LOD_STREAMING.md](../评估与测评/LOD_STREAMING.md)、[RESEARCH_NOTES.md](../评估与测评/RESEARCH_NOTES.md) 和 [综合评估](../评估与测评/投影渲染与区块缓存综合评估.md)。
+
+## 更改投影模式（1.1.4）
+
+`projection-edit.js` 在主 GPU 视图中复用工具箱外观，`projection-edit-model.js` 处理调试棒的属性记忆和正反循环。`debug-stick-properties.js` 从本地原版 `StateDefinition` 属性与枚举声明生成；更新客户端版本时运行 `tools/generate-debug-stick-properties.py`，无需重建二维图集。
+
+`editPick` 返回体素、进入面法向及保存的完整状态，可按当前部分渲染范围跳过外围。`editBlock` 在 `renders/.edit/current.litematic` 中维护工作副本，使用 `ProjectionEdits` 的 NBT 路径复制和不可变方块页保存最多 40 步历史；新增调色板状态跨越位宽时重新编码该区域。原来的非编辑 NBT 数据保持原样，同类型状态修改保留方块实体，更换类型或删除清理该位置的数据。导出写入作者 LiteKinda。模型更新后复用 `buildView({preserveCamera:true})` 重建完整 / 分块模型和独立选区；编辑期间不并行提交其他编辑。
+
+新增回归：`ProjectionEditRegression.java`（编译到 `tools/verify/projection-edit-output`）、`projection-edit-model.cjs`、`projection-edit-ui.cjs`。界面检查使用现有 `RunHiddenElectron.ps1`，覆盖 G 与自定义快捷键、普通视角 / 漫游、部分渲染、调试棒、历史、原文件不变与导出重开；截图保存在 `tools/verify/projection-edit-output/editor-ui.png`。
+
+### 编辑预览与容器
+
+`editBlock` 只修改内存 NBT 并重新物化调色板，`editPatch` 通过 `SceneBuilder.buildEditing` 烘焙被编辑单元的 3³ 邻域，不执行 `prepareStreaming`、全投影光照或区块枚举。GPU 用稀疏位置纹理屏蔽基础模型中的旧单元，并叠加完整 / 选区的局部模型。局部照明沿用基础场景。`commitEdits` 仅在脏状态写入工作副本；退出更改模式后调用一次原有模型构建。显式重新渲染、切换文件及导出图片前也先提交；正常退出保存副本。
+
+`BlockInspector.container.slotItems` 提供不跨槽合并的物品与原始数量，保留 `items` 的旧聚合结果供兼容调用。容器 UI 只使用 `slotItems` 与 `slots`，物品数据不再截断。大箱右半槽位在 0–26，左半在 27–53。新放置的容器带保存为空的物品列表；同类型状态变化保留原有 NBT。
+
+检查入口：`PlacementInventoryRegression.java`、`placement-inventory-model.cjs`、`placement-inventory-ui.cjs`；最后一个使用 `RunHiddenElectron.ps1`，输出在 `tools/verify/placement-inventory-output`，包含槽位截图与一次退出重建的计数。
+
+### 编辑背包与快捷栏
+
+`editor-inventory.js` 管理固定单页的 36 槽（27＋9），schema v2 以空槽初始化并保存个人物品数组；旧自动填充目录页不迁移。`projection-edit.js` 为工具栏和已占用槽位启用 HTML 拖放，工具栏复制、背包内部交换，验证来源类型与当前槽位内容，取消不会删除源物品。槽位可右键清空，点击交换 / 点选 / 吸取沿用统一入口。键盘和滚轮通过现有按键配置分发，保留数字键和调试棒，删除旧背包分页操作；Alt＋滚轮缩放。背包经显式 IPC 存入 `UiSettings`，与投影数据分开。空槽不放置方块；异步拾取开始时固定本次物品与工具。
+
+### 漫游物品栏与版本
+
+`projectionFlyHotbar` 是预览内的 9＋1 格透明浮层，复用同一个背包模型和快捷键分发；背包 DOM 将快捷栏置于第一行，内部 schema v2 的物品索引保持兼容。`updateFlyMouseHint()` 在鼠标锁定 / 释放时调用编辑器的 `refreshVisibility()`，活动漫游或正在锁定时隐藏完整工具箱并显示浮层，暂停后恢复；查看容器、指令和弹窗沿用原有暂停入口。浮层按钮阻止指针事件传入三维编辑，避免选物品时误放置。应用、启动器、打包脚本统一使用 1.1.4，后续版本为 1.1.x。

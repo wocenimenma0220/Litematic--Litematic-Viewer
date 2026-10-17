@@ -23,6 +23,7 @@ const APP_HOME = path.resolve(__dirname, '..');
 const uiSettings = new UiSettings(APP_HOME);
 const sceneTransfer = new SceneTransfer();
 const selectionTransfer = new SceneTransfer();
+
 function diagnostic(message) {
   try {
     fs.mkdirSync(path.join(APP_HOME, 'logs'), { recursive: true });
@@ -39,7 +40,7 @@ app.setAppUserModelId('io.kindasus.projectionpreview');
 let mainWindow = null;
 let engine = null;
 let renderStopPromise = null;
-let openedSchematic=null,resourceRoot=null;
+let openedSchematic=null,resourceRoot=null,pendingEdits=false;
 const backgroundExports=new BackgroundExports({home:APP_HOME,runtime:resolveRuntime(APP_HOME),onUpdate:job=>{
   if(mainWindow&&!mainWindow.isDestroyed())mainWindow.webContents.send('exports:update',job);
 }});
@@ -129,7 +130,7 @@ ipcMain.handle('engine:forceStop', () => {
   if (renderStopPromise) return renderStopPromise;
   const previous = engine;
   const previousPid=previous?.proc?.pid;
-  openedSchematic = null;
+  openedSchematic = null;pendingEdits=false;
   // Kill first, independently of outstanding RPC calls and file transfers.
   const stopped = previous ? previous.forceStop() : Promise.resolve();
   renderStopPromise = (async () => {
@@ -163,7 +164,7 @@ handleEngine('engine:open', async (client, _e, file) => {
   requireCurrentEngine(client);
   if(!client.resourcesLoaded)await loadEngineResources(client,resourceRoot);
   diagnostic('opening schematic: '+file);
-  try {await sceneTransfer.close();requireCurrentEngine(client);await selectionTransfer.close();await client.call('cancelPreview',{});const result=await client.call('open',{path:file});requireCurrentEngine(client);openedSchematic=file;diagnostic('schematic opened: '+file);return result;}
+  try {await sceneTransfer.close();requireCurrentEngine(client);await selectionTransfer.close();await client.call('cancelPreview',{});const result=await client.call('open',{path:file});requireCurrentEngine(client);openedSchematic=file;pendingEdits=false;diagnostic('schematic opened: '+file);return result;}
   catch(error){diagnostic('schematic open failed: '+file+'; '+error.message);throw error;}
 });
 handleEngine('engine:render', async (client, _e, params) => client.call('render', await uiSettings.renderParams(params)));
@@ -171,6 +172,7 @@ handleEngine('engine:renderPreview', async (client, _e, params) => client.call('
 handleEngine('engine:renderAnimation', async (client, _e, params) => client.call('renderAnimation', await uiSettings.renderParams(params)));
 ipcMain.handle('exports:start',async(_event,{kind,params})=>{
   if(!openedSchematic)throw Error('请先打开投影');
+  const committed=await engine.call('commitEdits',{});if(committed.changed)openedSchematic=committed.path;pendingEdits=false;
   const source=openedSchematic;
   return backgroundExports.submit({kind,source,params:await uiSettings.renderParams(params),resources:{...(resourceRoot?{root:resourceRoot}:{}),imports:await packStore.read()}});
 });
@@ -197,6 +199,10 @@ ipcMain.handle('dialog:saveMaterials',async(_event,{suggested,format,scope})=>{
 handleEngine('engine:pickBlock', (client, _e, ray) => client.call('pickBlock', ray));
 
 ipcMain.handle('ui:settings', () => uiSettings.settings());
+ipcMain.handle('ui:editorInventory',async(_event,inventory)=>{
+  const {cleanInventory}=require('./renderer/editor-inventory');
+  const editorInventory=cleanInventory(inventory);await uiSettings.save({editorInventory});return {editorInventory};
+});
 ipcMain.handle('ui:keybindings',async(_event,bindings)=>{
   const {cleanShortcutBindings}=require('./renderer/keyboard-shortcuts');
   const keybindings=cleanShortcutBindings(bindings);await uiSettings.save({keybindings});return {keybindings};
@@ -206,7 +212,7 @@ ipcMain.handle('ui:previewBackend', async (_event, backend) => {
   await uiSettings.save({ previewBackend: backend });
   return { previewBackend: backend };
 });
-for(const key of ['largeProjection','lightingEnabled','showCoordinates','clearCacheOnExit']) {
+for(const key of ['largeProjection','lightingEnabled','showCoordinates','clearCacheOnExit','consoleHidden']) {
   ipcMain.handle('ui:'+key,async(_event,enabled)=>{await uiSettings.save({[key]:enabled===true,...(key==='largeProjection'?{projectionMode:enabled?'streaming':'full'}:{})});return {[key]:enabled===true};});
 }
 ipcMain.handle('ui:projectionMode',async(_event,mode)=>{
@@ -336,6 +342,24 @@ async function scenePayload(client,event,res,options={}) {
   };
 }
 ipcMain.handle('engine:previewDiagnostic', (_event, message) => { diagnostic(String(message).slice(0, 1500)); });
+
+handleEngine('engine:searchBlocks',(client,_event,request)=>client.call('searchBlocks',request));
+handleEngine('engine:editPick',(client,_event,request)=>client.call('editPick',request));
+handleEngine('engine:editBlock',async(client,_event,request)=>{const result=await client.call('editBlock',request);requireCurrentEngine(client);if(result.changed)pendingEdits=true;return result;});
+handleEngine('engine:editStates',(client,_event,positions)=>client.call('editStates',{positions}));
+handleEngine('engine:inspectPosition',(client,_event,position)=>client.call('inspectPosition',{position}));
+handleEngine('engine:commitEdits',async client=>{const result=await client.call('commitEdits',{});requireCurrentEngine(client);if(result.changed)openedSchematic=result.path;pendingEdits=false;return result;});
+handleEngine('engine:editPatch',async(client,_event,options={})=>{
+  const result=await client.call('editPatch',{directory:path.join(APP_HOME,'renders','.edit','preview'),selection:options.selection});requireCurrentEngine(client);if(result.empty)return result;
+  const buffer=await fs.promises.readFile(result.mesh),atlas=await fs.promises.readFile(result.atlas),selected=result.selectionMesh?await fs.promises.readFile(result.selectionMesh):null;
+  return {cells:result.cells,revision:result.revision,quads:result.quads,meshArrayBuffer:buffer.buffer.slice(buffer.byteOffset,buffer.byteOffset+buffer.byteLength),selectionArrayBuffer:selected?selected.buffer.slice(selected.byteOffset,selected.byteOffset+selected.byteLength):null,atlasDataUrl:'data:image/png;base64,'+atlas.toString('base64')};
+});
+handleEngine('engine:exportEdited',async(client,_event,request={})=>{
+  const result=await dialog.showSaveDialog(mainWindow,{title:'导出修改后的投影',defaultPath:request.suggested||'更改投影.litematic',filters:[{name:'Litematica 投影',extensions:['litematic']}]});
+  if(result.canceled||!result.filePath)return null;requireCurrentEngine(client);
+  const output=/\.litematic$/i.test(result.filePath)?result.filePath:result.filePath+'.litematic';
+  return client.call('exportEdited',{out:output});
+});
 
 // --- resource pack management ------------------------------------------------
 
@@ -511,6 +535,7 @@ app.on('before-quit', event => {
       await selectionTransfer.close();
       await backgroundExports.close();
       if(renderStopPromise)await renderStopPromise.catch(()=>{});
+      if(pendingEdits&&engine?.isRunning()&&!renderStopPromise)await engine.call('commitEdits',{});
       if(engine)await engine.stop();
       await uiSettings.queue;
       if((await uiSettings.read()).clearCacheOnExit){await clearRenderingCache(APP_HOME);diagnostic('render cache cleared on exit');}
